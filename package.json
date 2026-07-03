@@ -1,0 +1,23 @@
+{
+  "name": "yarikkiri-daesodong",
+  "version": "0.1.0",
+  "private": true,
+  "description": "야리끼리 대소동 - 가다(GADA) 러닝 미니게임",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.3"
+  }
+}
