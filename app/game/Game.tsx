@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GameEngine } from "./engine/GameEngine";
+import { loadSprites } from "./engine/sprites";
 import { CHASE, VIEW } from "./engine/config";
 import type { GameResult, HudState } from "./engine/types";
 import { parseToken } from "@/lib/auth";
@@ -36,6 +37,16 @@ export default function Game({ token }: { token?: string }) {
   const [showCharge, setShowCharge] = useState(false);
   const sessionRef = useRef<string>("");
   useEffect(() => setTickets(loadTickets()), []); // 클라이언트에서 로드
+
+  // WP4: 스프라이트 프리로드 완료 후 시작 허용
+  const [spritesLoaded, setSpritesLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    loadSprites().then(() => alive && setSpritesLoaded(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // 1플레이 = 1티켓. 부족하면 S5 노출 후 false.
   const consumeTicket = useCallback((): boolean => {
@@ -89,9 +100,9 @@ export default function Game({ token }: { token?: string }) {
       const ry = (e.clientY - rect.top) / rect.height;
       gesture.current = { startY: e.clientY, slid: false, hold: false };
 
-      // 시작 전(ready): 티켓 소모 후 시작(부족하면 S5 충전 화면)
+      // 시작 전(ready): 스프라이트 로딩 완료 + 티켓 소모 후 시작
       if (hud.phase !== "playing") {
-        if (showCharge) return; // 충전 화면은 자체 버튼 사용
+        if (showCharge || !spritesLoaded) return;
         if (consumeTicket()) eng.onTap();
         return;
       }
@@ -103,7 +114,7 @@ export default function Game({ token }: { token?: string }) {
         eng.onTap(); // 상단 탭 = 점프
       }
     },
-    [result, hud.phase, showCharge, consumeTicket]
+    [result, hud.phase, showCharge, spritesLoaded, consumeTicket]
   );
 
   const onPointerMove = useCallback(
@@ -220,7 +231,9 @@ export default function Game({ token }: { token?: string }) {
         )}
 
         {/* 시작 오버레이 (인트로 아트) */}
-        {hud.phase === "ready" && !showCharge && <ReadyOverlay tickets={tickets} />}
+        {hud.phase === "ready" && !showCharge && (
+          <ReadyOverlay tickets={tickets} loading={!spritesLoaded} />
+        )}
 
         {/* 게임오버 오버레이 (S4) */}
         {hud.phase === "gameover" && result && !showCharge && (
@@ -406,7 +419,13 @@ function DialogueBubble({ text }: { text: string }) {
   );
 }
 
-function ReadyOverlay({ tickets }: { tickets: number }) {
+function ReadyOverlay({
+  tickets,
+  loading,
+}: {
+  tickets: number;
+  loading: boolean;
+}) {
   return (
     <div
       style={{
@@ -434,7 +453,7 @@ function ReadyOverlay({ tickets }: { tickets: number }) {
       >
         🎟 {tickets}
       </div>
-      {/* 조작 안내 */}
+      {/* 조작 안내 / 로딩 */}
       <div
         style={{
           position: "absolute",
@@ -448,7 +467,9 @@ function ReadyOverlay({ tickets }: { tickets: number }) {
           textShadow: "0 1px 3px rgba(0,0,0,.7)",
         }}
       >
-        상단 탭 = 점프(2단) · 하단 홀드/아래로 = 슬라이드
+        {loading
+          ? "⏳ 현장 준비 중…"
+          : "상단 탭 = 점프(2단) · 하단 홀드/아래로 = 슬라이드"}
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import {
 } from "./config";
 import { Background } from "./Background";
 import { intersects, intersectsPadded } from "./collision";
+import { sprite } from "./sprites";
 import { Coin, Item, Obstacle, Projectile } from "./obstacle";
 import { Player } from "./player";
 import { ScoreKeeper } from "./score";
@@ -441,6 +442,19 @@ export class GameEngine {
       ctx.ellipse(w / 2, h / 2, w * 0.95, h * 0.7, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
+    }
+
+    // WP4: 박소장 스프라이트 — 경고(투척 준비) 중엔 throw, 평시 run1/run2 교차
+    const throwing = this.projectiles.some((p) => p.warning);
+    const img = throwing
+      ? sprite("ps_throw")
+      : sprite(Math.floor(now / 130) % 2 === 0 ? "ps_run1" : "ps_run2");
+    if (img) {
+      const dh = h * 1.15;
+      const dw = dh * (img.width / img.height);
+      ctx.drawImage(img, w / 2 - dw / 2, h - dh, dw, dh);
+      ctx.restore();
+      return;
     }
 
     // 다리 (성큼성큼)

@@ -1,4 +1,5 @@
 import { GROUND_Y, PHYSICS, PLAYER, SLIDE } from "./config";
+import { sprite } from "./sprites";
 import type { Box } from "./types";
 
 // 김반장 캐릭터. 원터치 1단/2단 점프 + 슬라이드 물리·상태 관리.
@@ -105,10 +106,41 @@ export class Player {
     }
   }
 
+  // 상태 → 스프라이트 프레임 (run1/run2 교차, jump/fall/slide/hurt)
+  private currentSprite(now: number): HTMLImageElement | null {
+    if (this.isInvuln(now)) return sprite("gb_hurt");
+    if (this.sliding) return sprite("gb_slide");
+    if (!this.onGround) return sprite(this.vy < 0 ? "gb_jump" : "gb_fall");
+    return sprite(Math.floor(this.runFrame) % 2 === 0 ? "gb_run1" : "gb_run2");
+  }
+
   draw(ctx: CanvasRenderingContext2D, now: number) {
     const blink = this.isInvuln(now) && Math.floor(now / 100) % 2 === 0;
     ctx.save();
     ctx.globalAlpha = blink ? 0.35 : 1;
+
+    // WP4: 스프라이트 렌더(히트박스는 유지, 그림만 얹음). 미로드 시 벡터 폴백.
+    const img = this.currentSprite(now);
+    if (img) {
+      // 발끝을 지면에 정렬, 히트박스보다 약간 크게(시각 보정)
+      const dh = PLAYER.H * 1.12;
+      const dw = dh * (img.width / img.height);
+      const cx = this.x + PLAYER.W / 2;
+      const bottom = this.sliding ? GROUND_Y : this.y + PLAYER.H;
+      if (this.sliding) {
+        // 슬라이드 흙먼지
+        ctx.fillStyle = "rgba(200,180,150,0.55)";
+        for (let i = 0; i < 3; i++) {
+          const px = this.x - 6 - i * 7 + Math.sin(now / 60 + i) * 2;
+          ctx.beginPath();
+          ctx.arc(px, GROUND_Y - 3, 3 + i, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.drawImage(img, cx - dw / 2, bottom - dh, dw, dh);
+      ctx.restore();
+      return;
+    }
 
     if (this.sliding) {
       this.drawSliding(ctx, now);

@@ -1,4 +1,5 @@
 import { GROUND_Y, PROJECTILE, VIEW } from "./config";
+import { sprite } from "./sprites";
 import type {
   Box,
   ItemKind,
@@ -59,7 +60,17 @@ export class Obstacle implements Entity {
   draw(ctx: CanvasRenderingContext2D, _now?: number) {
     const b = this.box;
     if (this.kind === "puddle") {
-      // 시멘트 웅덩이
+      // 시멘트 웅덩이 — 액체 타일 스프라이트(WP4), 미로드 시 벡터
+      const img = sprite("cement");
+      if (img) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(b.x + b.w / 2, GROUND_Y - 3, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(img, b.x - 4, GROUND_Y - b.h - 2, b.w + 8, b.h + 8);
+        ctx.restore();
+        return;
+      }
       ctx.fillStyle = "#7a8699";
       ctx.beginPath();
       ctx.ellipse(b.x + b.w / 2, GROUND_Y - 2, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
@@ -75,9 +86,15 @@ export class Obstacle implements Entity {
       const barY = b.y + b.h - barH; // 바 본체(하단)
       ctx.save();
       // 측면 지지 기둥
-      ctx.fillStyle = "#5b6472";
-      ctx.fillRect(b.x + 1, b.y, 5, b.h);
-      ctx.fillRect(b.x + b.w - 6, b.y, 5, b.h);
+      const postImg = sprite("post");
+      if (postImg) {
+        ctx.drawImage(postImg, b.x - 1, b.y, 9, b.h);
+        ctx.drawImage(postImg, b.x + b.w - 8, b.y, 9, b.h);
+      } else {
+        ctx.fillStyle = "#5b6472";
+        ctx.fillRect(b.x + 1, b.y, 5, b.h);
+        ctx.fillRect(b.x + b.w - 6, b.y, 5, b.h);
+      }
       // 상단 비계 네팅(반투명 격자)
       ctx.globalAlpha = 0.5;
       ctx.strokeStyle = "#8894a6";
@@ -95,24 +112,36 @@ export class Obstacle implements Entity {
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
-      // 하단 위험 줄무늬 바
-      ctx.fillStyle = "#ffb800";
-      roundRect(ctx, b.x, barY, b.w, barH, 4);
-      ctx.fill();
-      ctx.beginPath();
-      roundRect(ctx, b.x, barY, b.w, barH, 4);
-      ctx.clip();
-      ctx.strokeStyle = "#1f2a44";
-      ctx.lineWidth = 6;
-      for (let s = -barH; s < b.w; s += 14) {
+      // 하단 위험 줄무늬 바 — 스프라이트 우선(WP4)
+      const hazImg = sprite("hazard");
+      if (hazImg) {
+        ctx.drawImage(hazImg, b.x - 2, barY, b.w + 4, barH);
+      } else {
+        ctx.fillStyle = "#ffb800";
+        roundRect(ctx, b.x, barY, b.w, barH, 4);
+        ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(b.x + s, barY + barH);
-        ctx.lineTo(b.x + s + barH, barY);
-        ctx.stroke();
+        roundRect(ctx, b.x, barY, b.w, barH, 4);
+        ctx.clip();
+        ctx.strokeStyle = "#1f2a44";
+        ctx.lineWidth = 6;
+        for (let s = -barH; s < b.w; s += 14) {
+          ctx.beginPath();
+          ctx.moveTo(b.x + s, barY + barH);
+          ctx.lineTo(b.x + s + barH, barY);
+          ctx.stroke();
+        }
       }
       ctx.restore();
     } else {
-      // 자재 더미 (벽돌/블록)
+      // 자재 더미 — 크레이트 스프라이트 2단 적재(WP4), 미로드 시 벡터
+      const crate = sprite("crate");
+      if (crate) {
+        const half = b.h / 2;
+        ctx.drawImage(crate, b.x, b.y + half, b.w, half);
+        ctx.drawImage(crate, b.x + 2, b.y, b.w - 4, half);
+        return;
+      }
       ctx.fillStyle = "#c0703c";
       roundRect(ctx, b.x, b.y, b.w, b.h, 4);
       ctx.fill();
@@ -154,6 +183,14 @@ export class Coin implements Entity {
     const bob = Math.sin(now / 200 + this.x / 40) * 3;
     ctx.save();
     ctx.translate(this.x, this.y + bob);
+    // WP4: 코인 스프라이트(안전모 코인 커스텀 확보 전 임시), 미로드 시 벡터
+    const img = sprite("coin");
+    if (img) {
+      const s = this.r * 2.3;
+      ctx.drawImage(img, -s / 2, -s / 2, s, s);
+      ctx.restore();
+      return;
+    }
     ctx.fillStyle = "#ffb800";
     ctx.beginPath();
     ctx.arc(0, 0, this.r, 0, Math.PI * 2);
@@ -324,7 +361,7 @@ export class Item implements Entity {
     ctx.globalAlpha = 1;
 
     if (this.kind === "coffee") {
-      // 종이컵 커피
+      // 종이컵 커피 (창작 디자인 — 커스텀 에셋 확보 전까지 벡터 유지)
       ctx.fillStyle = "#fff";
       ctx.beginPath();
       ctx.moveTo(-11, -12);
@@ -336,10 +373,16 @@ export class Item implements Entity {
       ctx.fillStyle = "#6f4a2f";
       ctx.fillRect(-11, -12, 22, 5);
     } else {
-      // 부스터 (별/번개)
-      ctx.fillStyle = "#ff9500";
-      drawStar(ctx, 0, 0, 5, this.r, this.r * 0.5);
-      ctx.fill();
+      // 부스터 — 별 스프라이트(WP4), 미로드 시 벡터
+      const img = sprite("booster");
+      if (img) {
+        const s = this.r * 2.6;
+        ctx.drawImage(img, -s / 2, -s / 2, s, s);
+      } else {
+        ctx.fillStyle = "#ff9500";
+        drawStar(ctx, 0, 0, 5, this.r, this.r * 0.5);
+        ctx.fill();
+      }
     }
     ctx.restore();
   }
