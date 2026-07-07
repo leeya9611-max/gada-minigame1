@@ -21,6 +21,7 @@ export class Obstacle implements Entity {
   kind: ObstacleKind;
   w: number;
   h: number;
+  gap: number; // 바닥과 박스 하단 사이 여유(슬라이드 통과용). 지상 장애물은 0.
 
   constructor(kind: ObstacleKind) {
     this.kind = kind;
@@ -28,14 +29,26 @@ export class Obstacle implements Entity {
     if (kind === "puddle") {
       this.w = 64;
       this.h = 26;
+      this.gap = 0;
+    } else if (kind === "lowbar") {
+      // 낮은 통과형: 상단이 높게 막힌 배리어(점프로 못 넘음). 하단만 슬라이드 통과.
+      this.w = 44;
+      this.gap = 34; // 바닥 통과 공간
+      this.h = GROUND_Y - this.gap - 30; // 상단을 화면 위(y≈30)까지
     } else {
       this.w = 40;
       this.h = 56;
+      this.gap = 0;
     }
   }
 
   get box(): Box {
-    return { x: this.x, y: GROUND_Y - this.h, w: this.w, h: this.h };
+    return {
+      x: this.x,
+      y: GROUND_Y - this.gap - this.h,
+      w: this.w,
+      h: this.h,
+    };
   }
 
   update(dt: number, worldSpeed: number, _now?: number) {
@@ -55,6 +68,49 @@ export class Obstacle implements Entity {
       ctx.beginPath();
       ctx.ellipse(b.x + b.w / 2, GROUND_Y - 4, b.w / 2.6, b.h / 3, 0, 0, Math.PI * 2);
       ctx.fill();
+    } else if (this.kind === "lowbar") {
+      // 낮은 통과형: 상단은 비계 네팅(점프로 못 넘음), 하단 통과 공간은 열림.
+      // 하단 위험 줄무늬 바가 "슬라이드로 지나가는 지점"을 강조.
+      const barH = 60;
+      const barY = b.y + b.h - barH; // 바 본체(하단)
+      ctx.save();
+      // 측면 지지 기둥
+      ctx.fillStyle = "#5b6472";
+      ctx.fillRect(b.x + 1, b.y, 5, b.h);
+      ctx.fillRect(b.x + b.w - 6, b.y, 5, b.h);
+      // 상단 비계 네팅(반투명 격자)
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = "#8894a6";
+      ctx.lineWidth = 1.5;
+      for (let yy = b.y; yy < barY; yy += 12) {
+        ctx.beginPath();
+        ctx.moveTo(b.x + 4, yy);
+        ctx.lineTo(b.x + b.w - 4, yy);
+        ctx.stroke();
+      }
+      for (let xx = b.x + 6; xx < b.x + b.w - 4; xx += 12) {
+        ctx.beginPath();
+        ctx.moveTo(xx, b.y);
+        ctx.lineTo(xx, barY);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // 하단 위험 줄무늬 바
+      ctx.fillStyle = "#ffb800";
+      roundRect(ctx, b.x, barY, b.w, barH, 4);
+      ctx.fill();
+      ctx.beginPath();
+      roundRect(ctx, b.x, barY, b.w, barH, 4);
+      ctx.clip();
+      ctx.strokeStyle = "#1f2a44";
+      ctx.lineWidth = 6;
+      for (let s = -barH; s < b.w; s += 14) {
+        ctx.beginPath();
+        ctx.moveTo(b.x + s, barY + barH);
+        ctx.lineTo(b.x + s + barH, barY);
+        ctx.stroke();
+      }
+      ctx.restore();
     } else {
       // 자재 더미 (벽돌/블록)
       ctx.fillStyle = "#c0703c";
@@ -126,12 +182,14 @@ export class Projectile implements Entity {
   vx = -PROJECTILE.SPEED;
   rot = 0;
   warnY: number; // 경고 마크 표시 y (플레이어 높이 부근)
+  high: boolean; // 상단 투척(슬라이드로 회피) 여부
 
-  constructor(kind: ProjectileKind, targetY: number, now: number) {
+  constructor(kind: ProjectileKind, targetY: number, now: number, high = false) {
     this.kind = kind;
     this.y = targetY;
     this.warnY = targetY;
     this.spawnedAt = now;
+    this.high = high;
   }
 
   get warning(): boolean {
@@ -156,11 +214,31 @@ export class Projectile implements Entity {
 
   draw(ctx: CanvasRenderingContext2D, now: number) {
     if (!this.launched) {
-      // 경고 마크 (깜빡이는 삼각 느낌표) — 화면 우측 가장자리
-      const blink = Math.floor(now / 150) % 2 === 0;
-      ctx.save();
-      ctx.globalAlpha = blink ? 1 : 0.35;
+      // 경고 텔레그래프: 비행 높이(warnY)에 점선 가이드 + 깜빡이는 느낌표.
+      // 발사가 가까워질수록 깜빡임이 빨라지고 진해진다.
+      const progress = Math.min(
+        1,
+        (now - this.spawnedAt) / PROJECTILE.WARNING_MS
+      );
+      const period = 260 - progress * 160; // 260ms → 100ms 로 가속
+      const blink = Math.floor(now / period) % 2 === 0;
       const wx = VIEW.W - 26;
+
+      ctx.save();
+      ctx.globalAlpha = 0.35 + progress * 0.4;
+
+      // 날아올 경로(높이) 가이드 라인
+      ctx.strokeStyle = "#ff3b30";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 7]);
+      ctx.beginPath();
+      ctx.moveTo(0, this.warnY);
+      ctx.lineTo(wx - 18, this.warnY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 경고 삼각 느낌표
+      ctx.globalAlpha = blink ? 1 : 0.4;
       ctx.fillStyle = "#ff3b30";
       ctx.beginPath();
       ctx.moveTo(wx, this.warnY - 16);

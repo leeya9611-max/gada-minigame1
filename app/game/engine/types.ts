@@ -7,7 +7,7 @@ export interface Box {
   h: number;
 }
 
-export type ObstacleKind = "puddle" | "stack"; // 시멘트 웅덩이 / 자재 더미
+export type ObstacleKind = "puddle" | "stack" | "lowbar"; // 웅덩이 / 자재더미 / 낮은통과형(슬라이드)
 export type ProjectileKind = "papers" | "tube" | "megaphone"; // 서류뭉치 / 도면 통 / 확성기
 export type ItemKind = "coffee" | "booster"; // 다방커피(감속) / 퇴근길 부스터(무적)
 
@@ -26,6 +26,8 @@ export interface HudState {
   score: number;
   hp: number;
   boosterActive: boolean;
-  coffeeActive: boolean;
+  slowActive: boolean; // 피격 감속(WP1). 이전 coffeeActive 대체
+  gap: number; // 박소장 추격 거리(px, WP2)
+  chaseRatio: number; // gap / MAX_GAP (0=붙잡히기 직전, 1=안전)
   dialogue: string | null;
 }

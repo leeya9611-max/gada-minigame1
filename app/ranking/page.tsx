@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { tierOf } from "./tier";
+import { requestNativeAction } from "@/lib/api";
+import { loadTickets, saveTickets } from "@/lib/tickets";
 
 type TabKey = "national" | "age" | "region";
 
@@ -46,31 +48,46 @@ const MOCK: Record<TabKey, RankRow[]> = {
 
 export default function RankingPage() {
   const [tab, setTab] = useState<TabKey>("national");
-  const [tickets, setTickets] = useState(3);
+  const [tickets, setTickets] = useState(0);
+  useEffect(() => setTickets(loadTickets()), []); // 게임과 동일 저장소 공유
   const rows = MOCK[tab];
   const me = useMemo(() => rows.find((r) => r.me), [rows]);
   const myTier = tierOf(me?.score ?? 0);
 
-  // 티켓 소진 시 충전 선택. 실제 지급/차감은 네이티브 앱 API 담당.
-  const watchAd = () => {
-    console.log("[NATIVE_REQUEST] watchAdForTicket");
-    setTickets((t) => t + 1);
+  // 티켓 충전 요청. 실제 지급/차감은 네이티브 앱 API 담당(웹은 요청+표시 스텁).
+  const charge = (action: "watchAdForTicket" | "exchangePointsForTicket") => () => {
+    requestNativeAction(action);
+    setTickets((t) => {
+      const next = t + 1;
+      saveTickets(next);
+      return next;
+    });
   };
-  const exchangePoints = () => {
-    console.log("[NATIVE_REQUEST] exchangePointsForTicket");
-    setTickets((t) => t + 1);
-  };
+  const watchAd = charge("watchAdForTicket");
+  const exchangePoints = charge("exchangePointsForTicket");
 
   return (
     <main
       style={{
         height: "100%",
-        overflowY: "auto",
-        background: "linear-gradient(180deg, #1F2A44 0%, #0e1526 60%)",
-        color: "#fff",
-        padding: "20px 16px 32px",
+        display: "flex",
+        justifyContent: "center",
+        background: "#0e1526",
       }}
     >
+      {/* 모바일 웹앱 프레임: 넓은 화면에서도 세로 모바일 폭으로 고정 */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 480,
+          height: "100%",
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          background: "linear-gradient(180deg, #1F2A44 0%, #0e1526 60%)",
+          color: "#fff",
+          padding: "20px 16px 32px",
+        }}
+      >
       <header style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         <Link href="/game" style={{ color: "#8fa3c4", fontSize: 22, textDecoration: "none" }}>
           ‹
@@ -201,6 +218,7 @@ export default function RankingPage() {
           </button>
         </div>
       </section>
+      </div>
     </main>
   );
 }

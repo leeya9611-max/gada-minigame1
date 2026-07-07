@@ -1,21 +1,32 @@
-import { GROUND_Y, PHYSICS, PLAYER } from "./config";
+import { GROUND_Y, PHYSICS, PLAYER, SLIDE } from "./config";
 import type { Box } from "./types";
 
-// 김반장 캐릭터. 원터치 1단/2단 점프 물리와 상태 관리.
+// 김반장 캐릭터. 원터치 1단/2단 점프 + 슬라이드 물리·상태 관리.
 export class Player {
   x = PLAYER.X;
   y = GROUND_Y - PLAYER.H;
   vy = 0;
   jumps = 0; // 현재 공중 점프 사용 횟수 (0=지면)
-  hp = PLAYER.MAX_HP;
+  hp: number = PLAYER.MAX_HP;
   invulnUntil = 0; // 이 시각(ms)까지 무적
   runFrame = 0; // 달리기 애니메이션 프레임 누적
+  sliding = false; // 슬라이드(숙이기) 중
+  slideUntil = 0; // 자동 기립 시각(ms)
 
   get onGround(): boolean {
     return this.y >= GROUND_Y - PLAYER.H - 0.5;
   }
 
+  private get slideH(): number {
+    return PLAYER.H * SLIDE.HITBOX_SCALE;
+  }
+
+  // 슬라이드 중에는 히트박스를 낮춤(발은 지면, 상단을 내림)
   get box(): Box {
+    if (this.sliding) {
+      const h = this.slideH;
+      return { x: this.x, y: GROUND_Y - h, w: PLAYER.W, h };
+    }
     return { x: this.x, y: this.y, w: PLAYER.W, h: PLAYER.H };
   }
 
@@ -26,10 +37,13 @@ export class Player {
     this.hp = PLAYER.MAX_HP;
     this.invulnUntil = 0;
     this.runFrame = 0;
+    this.sliding = false;
+    this.slideUntil = 0;
   }
 
-  // 원터치 입력: 지면이면 1단, 공중이면 2단 점프 (최대 2단)
+  // 원터치 입력: 지면이면 1단, 공중이면 2단 점프 (최대 2단). 점프는 슬라이드를 취소.
   jump() {
+    this.sliding = false;
     if (this.onGround) {
       this.vy = -PHYSICS.JUMP_V;
       this.jumps = 1;
@@ -37,6 +51,20 @@ export class Player {
       this.vy = -PHYSICS.DOUBLE_JUMP_V;
       this.jumps = 2;
     }
+  }
+
+  // 아래 입력: 지면이면 슬라이드, 공중이면 빠른 하강
+  slide(now: number) {
+    if (this.onGround) {
+      this.sliding = true;
+      this.slideUntil = now + SLIDE.DURATION_MS;
+    } else {
+      this.vy = PHYSICS.MAX_FALL; // 공중 급강하
+    }
+  }
+
+  endSlide() {
+    this.sliding = false;
   }
 
   isInvuln(now: number): boolean {
@@ -50,7 +78,14 @@ export class Player {
     return true;
   }
 
-  update(dt: number, speedScale: number) {
+  // 다방커피 회복. 이미 최대면 false (호출부가 대체 지급 처리).
+  heal(amount = 1): boolean {
+    if (this.hp >= PLAYER.MAX_HP) return false;
+    this.hp = Math.min(PLAYER.MAX_HP, this.hp + amount);
+    return true;
+  }
+
+  update(dt: number, speedScale: number, now: number) {
     this.vy += PHYSICS.GRAVITY * dt;
     if (this.vy > PHYSICS.MAX_FALL) this.vy = PHYSICS.MAX_FALL;
     this.y += this.vy * dt;
@@ -61,6 +96,10 @@ export class Player {
       this.vy = 0;
       this.jumps = 0;
     }
+    // 슬라이드: 최대 지속 후 자동 기립. 공중이면 슬라이드 해제.
+    if (this.sliding && (now > this.slideUntil || !this.onGround)) {
+      this.sliding = false;
+    }
     if (this.onGround) {
       this.runFrame += dt * 12 * speedScale;
     }
@@ -70,6 +109,12 @@ export class Player {
     const blink = this.isInvuln(now) && Math.floor(now / 100) % 2 === 0;
     ctx.save();
     ctx.globalAlpha = blink ? 0.35 : 1;
+
+    if (this.sliding) {
+      this.drawSliding(ctx, now);
+      ctx.restore();
+      return;
+    }
 
     const { x, y } = this;
     const w = PLAYER.W;
@@ -109,6 +154,51 @@ export class Player {
     ctx.fillRect(x + 4, y + 7, w - 8, 4);
 
     ctx.restore();
+  }
+
+  // 슬라이드(숙이기) 포즈: 히트박스(발은 지면, 상단 내림)에 맞춘 낮은 자세
+  private drawSliding(ctx: CanvasRenderingContext2D, now: number) {
+    const w = PLAYER.W;
+    const sh = this.slideH;
+    const topY = GROUND_Y - sh;
+    const x = this.x;
+
+    // 흙먼지
+    ctx.fillStyle = "rgba(200,180,150,0.55)";
+    for (let i = 0; i < 3; i++) {
+      const px = x - 6 - i * 7 + Math.sin(now / 60 + i) * 2;
+      ctx.beginPath();
+      ctx.arc(px, GROUND_Y - 3, 3 + i, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 뻗은 다리
+    ctx.strokeStyle = "#2b3550";
+    ctx.lineWidth = 6;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x + 6, topY + sh - 4);
+    ctx.lineTo(x - 8, GROUND_Y - 2);
+    ctx.stroke();
+
+    // 몸통(앞으로 기운 낮은 조끼)
+    ctx.fillStyle = "#2E66F6";
+    roundRect(ctx, x - 6, topY + 4, w + 12, sh - 4, 6);
+    ctx.fill();
+    ctx.fillStyle = "#ffd23f";
+    ctx.fillRect(x - 6, topY + 10, w + 12, 4);
+
+    // 얼굴(전방)
+    ctx.fillStyle = "#ffdcb1";
+    roundRect(ctx, x + w - 8, topY + 2, 18, 14, 5);
+    ctx.fill();
+
+    // 안전모
+    ctx.fillStyle = "#ffb800";
+    ctx.beginPath();
+    ctx.arc(x + w + 1, topY + 4, 11, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(x + w - 10, topY + 3, 22, 4);
   }
 }
 
