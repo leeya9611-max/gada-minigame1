@@ -1,29 +1,38 @@
-// 스프라이트 로더 (WP4). Kenney CC0 에셋, 캔버스 drawImage용 프리로드 싱글턴.
-// 김반장은 임시 플레이스홀더 — 커스텀(파란 작업복+안전모) 확보 시 아래 경로만 교체.
+// 스프라이트 로더 (WP4). 캔버스 drawImage용 프리로드 싱글턴.
+// 김반장 = 커스텀(야리끼리 디자인), 소품·장애물 = Kenney CC0.
 
 const BASE = "/assets/sprites";
 
-// 교체 지점: 김반장 스프라이트 경로 상수 (ASSETS.md 참조)
+// 김반장 커스텀 스프라이트 (야리끼리 디자인 액션 시트에서 슬라이스, 런 6프레임)
 export const GIMBANJANG = {
-  idle: `${BASE}/gimbanjang/gimbanjang_idle.png`,
-  run1: `${BASE}/gimbanjang/gimbanjang_run1.png`,
-  run2: `${BASE}/gimbanjang/gimbanjang_run2.png`,
-  jump: `${BASE}/gimbanjang/gimbanjang_jump.png`,
-  fall: `${BASE}/gimbanjang/gimbanjang_fall.png`,
-  hurt: `${BASE}/gimbanjang/gimbanjang_hurt.png`,
-  slide: `${BASE}/gimbanjang/gimbanjang_duck.png`,
+  idle: `${BASE}/gimbanjang_custom/idle.png`,
+  run1: `${BASE}/gimbanjang_custom/run1.png`,
+  run2: `${BASE}/gimbanjang_custom/run2.png`,
+  run3: `${BASE}/gimbanjang_custom/run3.png`,
+  run4: `${BASE}/gimbanjang_custom/run4.png`,
+  run5: `${BASE}/gimbanjang_custom/run5.png`,
+  run6: `${BASE}/gimbanjang_custom/run6.png`,
+  jump: `${BASE}/gimbanjang_custom/jump.png`,
+  fall: `${BASE}/gimbanjang_custom/fall.png`,
+  hurt: `${BASE}/gimbanjang_custom/hurt.png`,
+  slide: `${BASE}/gimbanjang_custom/slide.png`,
 } as const;
 
+// 박소장 커스텀 (야리끼리 디자인 시트: 지시런/주먹대시/호루라기)
 export const PARKSOJANG = {
-  run1: `${BASE}/parksojang/parksojang_run1.png`,
-  run2: `${BASE}/parksojang/parksojang_run2.png`,
-  throw: `${BASE}/parksojang/parksojang_throw.png`,
+  run1: `${BASE}/parksojang_custom/run1.png`,
+  run2: `${BASE}/parksojang_custom/run2.png`,
+  throw: `${BASE}/parksojang_custom/throw.png`,
 } as const;
 
 export const SPRITE_PATHS = {
   gb_idle: GIMBANJANG.idle,
   gb_run1: GIMBANJANG.run1,
   gb_run2: GIMBANJANG.run2,
+  gb_run3: GIMBANJANG.run3,
+  gb_run4: GIMBANJANG.run4,
+  gb_run5: GIMBANJANG.run5,
+  gb_run6: GIMBANJANG.run6,
   gb_jump: GIMBANJANG.jump,
   gb_fall: GIMBANJANG.fall,
   gb_hurt: GIMBANJANG.hurt,

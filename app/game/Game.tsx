@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GameEngine } from "./engine/GameEngine";
 import { loadSprites } from "./engine/sprites";
-import { CHASE, VIEW } from "./engine/config";
+import type { MapKey } from "./engine/Background";
+import { CHASE, MAPS, VIEW } from "./engine/config";
+import { addMeters, loadTotalMeters } from "@/lib/progress";
+import { playSfx } from "@/lib/sfx";
 import type { GameResult, HudState } from "./engine/types";
 import { parseToken } from "@/lib/auth";
 import { requestNativeAction, sendResultToNative } from "@/lib/api";
@@ -48,6 +51,15 @@ export default function Game({ token }: { token?: string }) {
     };
   }, []);
 
+  // WP6: 맵 선택·누적거리 해금
+  const [mapKey, setMapKey] = useState<MapKey>("map1");
+  const [totalM, setTotalM] = useState(0);
+  useEffect(() => setTotalM(loadTotalMeters()), []);
+  const selectMap = useCallback((key: MapKey) => {
+    setMapKey(key);
+    engineRef.current?.setMap(key);
+  }, []);
+
   // 1플레이 = 1티켓. 부족하면 S5 노출 후 false.
   const consumeTicket = useCallback((): boolean => {
     if (tickets <= 0) {
@@ -61,10 +73,23 @@ export default function Game({ token }: { token?: string }) {
     return true;
   }, [tickets]);
 
+  // S1 → S2 시작: 버튼 클릭음 + 화이트 플래시 트랜지션
+  const [flash, setFlash] = useState(false);
+  const startGame = useCallback(() => {
+    if (!spritesLoaded || showCharge) return;
+    if (!consumeTicket()) return;
+    playSfx("button_click");
+    setFlash(true);
+    engineRef.current?.onTap();
+    window.setTimeout(() => setFlash(false), 450);
+  }, [spritesLoaded, showCharge, consumeTicket]);
+
   const handleGameOver = useCallback((r: GameResult) => {
     setResult(r);
     // WP5: 결과값 네이티브 전달 (postMessage 우선, 실패 시 콜백 스텁)
     sendResultToNative({ ...r, sessionId: sessionRef.current, ticketUsed: 1 });
+    // WP6: 누적 주행거리 갱신(맵 해금)
+    setTotalM(addMeters(engineRef.current?.distanceM ?? 0));
   }, []);
 
   useEffect(() => {
@@ -100,12 +125,8 @@ export default function Game({ token }: { token?: string }) {
       const ry = (e.clientY - rect.top) / rect.height;
       gesture.current = { startY: e.clientY, slid: false, hold: false };
 
-      // 시작 전(ready): 스프라이트 로딩 완료 + 티켓 소모 후 시작
-      if (hud.phase !== "playing") {
-        if (showCharge || !spritesLoaded) return;
-        if (consumeTicket()) eng.onTap();
-        return;
-      }
+      // 시작 전(ready): S1 타이틀의 [퇴근 시작] 버튼으로만 시작
+      if (hud.phase !== "playing") return;
       if (ry > 0.6) {
         eng.slide(); // 하단 홀드
         gesture.current.slid = true;
@@ -114,7 +135,7 @@ export default function Game({ token }: { token?: string }) {
         eng.onTap(); // 상단 탭 = 점프
       }
     },
-    [result, hud.phase, showCharge, spritesLoaded, consumeTicket]
+    [result, hud.phase]
   );
 
   const onPointerMove = useCallback(
@@ -150,13 +171,15 @@ export default function Game({ token }: { token?: string }) {
     setShowCharge(false);
   }, []);
 
-  // 데스크톱 개발용: 스페이스/↑=점프, ↓/S=슬라이드
+  // 데스크톱 개발용: 스페이스/↑=점프(레디에선 시작), ↓/S=슬라이드
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
       if (result) return;
       if (e.code === "Space" || e.code === "ArrowUp") {
         e.preventDefault();
-        engineRef.current?.onTap();
+        // 레디 화면에선 버튼과 동일한 시작 절차(티켓 소모 포함)
+        if (hud.phase === "ready") startGame();
+        else engineRef.current?.onTap();
       } else if (e.code === "ArrowDown" || e.code === "KeyS") {
         e.preventDefault();
         if (!e.repeat) engineRef.current?.slide();
@@ -171,7 +194,7 @@ export default function Game({ token }: { token?: string }) {
       window.removeEventListener("keydown", onDown);
       window.removeEventListener("keyup", onUp);
     };
-  }, [result]);
+  }, [result, hud.phase, startGame]);
 
   // 세로 감지 → 회전 안내. 지원 시 가로 잠금 시도(best-effort).
   const [isPortrait, setIsPortrait] = useState(false);
@@ -230,10 +253,32 @@ export default function Game({ token }: { token?: string }) {
           <DialogueBubble text={hud.dialogue} />
         )}
 
-        {/* 시작 오버레이 (인트로 아트) */}
+        {/* S1 타이틀 화면 (이미지 레이어) */}
         {hud.phase === "ready" && !showCharge && (
-          <ReadyOverlay tickets={tickets} loading={!spritesLoaded} />
+          <TitleScreen
+            tickets={tickets}
+            loading={!spritesLoaded}
+            mapKey={mapKey}
+            totalM={totalM}
+            onSelectMap={selectMap}
+            onStart={startGame}
+          />
         )}
+
+        {/* 시작 화이트 플래시 트랜지션 */}
+        {flash && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "#fff",
+              zIndex: 60,
+              pointerEvents: "none",
+              animation: "flashOut 0.45s ease-out forwards",
+            }}
+          />
+        )}
+        <style>{`@keyframes flashOut{from{opacity:1}to{opacity:0}}`}</style>
 
         {/* 게임오버 오버레이 (S4) */}
         {hud.phase === "gameover" && result && !showCharge && (
@@ -419,24 +464,117 @@ function DialogueBubble({ text }: { text: string }) {
   );
 }
 
-function ReadyOverlay({
+// S1 타이틀 화면: bg(cover·슬로우 줌) + logo(팝인·둥실) + 퇴근시작 버튼(펄스·프레스)
+function TitleScreen({
   tickets,
   loading,
+  mapKey,
+  totalM,
+  onSelectMap,
+  onStart,
 }: {
   tickets: number;
   loading: boolean;
+  mapKey: MapKey;
+  totalM: number;
+  onSelectMap: (k: MapKey) => void;
+  onStart: () => void;
 }) {
   return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        // 인트로 아트(타이틀·퇴근 시작 버튼 포함). 탭하면 시작.
-        backgroundImage: "url(/assets/intro.png)",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      }}
-    >
+    <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+      {/* 배경: cover + 아주 느린 줌 */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundImage: "url(/assets/ui/title/bg.jpg)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          animation: "titleZoom 26s ease-in-out infinite alternate",
+        }}
+      />
+
+      {/* 은은한 먼지 파티클 */}
+      {Array.from({ length: 6 }, (_, i) => (
+        <div
+          key={i}
+          style={{
+            position: "absolute",
+            left: `${8 + i * 15}%`,
+            bottom: "14%",
+            width: 4 + (i % 3) * 3,
+            height: 4 + (i % 3) * 3,
+            borderRadius: "50%",
+            background: "rgba(255,236,200,0.55)",
+            animation: `dustFloat ${6 + i * 1.6}s linear ${i * 1.2}s infinite`,
+            pointerEvents: "none",
+          }}
+        />
+      ))}
+
+      {/* 타이틀 로고: 팝인 후 둥실 */}
+      <div
+        style={{
+          position: "absolute",
+          top: "5%",
+          left: 0,
+          right: 0,
+          display: "flex",
+          justifyContent: "center",
+          animation: "logoPop 0.6s cubic-bezier(.34,1.56,.64,1) both",
+          pointerEvents: "none",
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/assets/ui/title/logo.png"
+          alt="야리끼리 대소동 — 퇴근길 런런런!"
+          draggable={false}
+          style={{
+            width: "38%",
+            animation: "logoBob 3.2s ease-in-out 0.6s infinite",
+          }}
+        />
+      </div>
+
+      {/* 퇴근 시작 버튼 */}
+      <div
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{
+          position: "absolute",
+          bottom: "6%",
+          left: "50%",
+          transform: "translateX(-50%)",
+        }}
+      >
+        <button
+          onClick={onStart}
+          disabled={loading}
+          className="titleStartBtn"
+          aria-label="퇴근 시작"
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: loading ? "default" : "pointer",
+            animation: loading ? "none" : "btnPulse 1.8s ease-in-out infinite",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/assets/ui/title/btn_start.png"
+            alt=""
+            draggable={false}
+            style={{
+              width: "min(270px, 36vw)",
+              display: "block",
+              transition: "transform 0.12s ease",
+              filter: loading ? "grayscale(0.6) opacity(0.7)" : "none",
+            }}
+          />
+        </button>
+      </div>
+
       {/* 티켓 잔여 (WP5) */}
       <div
         style={{
@@ -453,6 +591,36 @@ function ReadyOverlay({
       >
         🎟 {tickets}
       </div>
+
+      {/* 맵 선택 (WP6) */}
+      <div
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{ position: "absolute", top: 10, left: 12, display: "flex", gap: 6 }}
+      >
+        {MAPS.map((m) => {
+          const locked = totalM < m.unlockM;
+          const active = mapKey === m.key;
+          return (
+            <button
+              key={m.key}
+              onClick={() => !locked && onSelectMap(m.key as MapKey)}
+              style={{
+                border: active ? "2px solid #ffd23f" : "2px solid transparent",
+                borderRadius: 999,
+                padding: "5px 12px",
+                fontSize: 12,
+                fontWeight: 700,
+                background: "rgba(14,21,38,0.72)",
+                color: locked ? "#7a879c" : "#fff",
+                cursor: locked ? "default" : "pointer",
+              }}
+            >
+              {locked ? `🔒 ${m.name} (${m.unlockM.toLocaleString()}m)` : m.name}
+            </button>
+          );
+        })}
+      </div>
+
       {/* 조작 안내 / 로딩 */}
       <div
         style={{
@@ -465,12 +633,23 @@ function ReadyOverlay({
           fontWeight: 600,
           color: "#fff",
           textShadow: "0 1px 3px rgba(0,0,0,.7)",
+          pointerEvents: "none",
         }}
       >
         {loading
           ? "⏳ 현장 준비 중…"
-          : "상단 탭 = 점프(2단) · 하단 홀드/아래로 = 슬라이드"}
+          : `상단 탭 = 점프(2단) · 하단 홀드/아래로 = 슬라이드 · 누적 ${totalM.toLocaleString()}m`}
       </div>
+
+      <style>{`
+        @keyframes titleZoom { from { transform: scale(1); } to { transform: scale(1.07); } }
+        @keyframes logoPop { 0% { transform: scale(0.8); opacity: 0; } 60% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
+        @keyframes logoBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+        @keyframes btnPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+        @keyframes dustFloat { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: 0.6; } 100% { transform: translate(70px, -150px); opacity: 0; } }
+        .titleStartBtn:hover img { transform: scale(1.06); }
+        .titleStartBtn:active img { transform: scale(0.94); }
+      `}</style>
     </div>
   );
 }

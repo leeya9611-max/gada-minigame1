@@ -9,7 +9,7 @@ import {
   SPEED,
   VIEW,
 } from "./config";
-import { Background } from "./Background";
+import { Background, type MapKey } from "./Background";
 import { intersects, intersectsPadded } from "./collision";
 import { sprite } from "./sprites";
 import { Coin, Item, Obstacle, Projectile } from "./obstacle";
@@ -135,6 +135,16 @@ export class GameEngine {
     if (this.phase === "playing") {
       this.player.jump();
     }
+  }
+
+  // 맵 테마 전환(WP6). ready 화면에서 선택.
+  setMap(key: MapKey) {
+    this.bg = new Background(key);
+  }
+
+  // 이번 플레이 주행거리(m) — 누적 해금용
+  get distanceM(): number {
+    return Math.floor(this.score.distance / 10);
   }
 
   // 아래 입력(하단 홀드/아래 스와이프): 슬라이드

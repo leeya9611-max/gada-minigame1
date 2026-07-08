@@ -83,8 +83,14 @@ export const ITEM_EFFECT = {
 
 export const SCORE = {
   COIN_VALUE: 10, // 코인 1개당 랭킹 점수
-  DISTANCE_DIVISOR: 10, // 이동거리 → 점수 환산
+  DISTANCE_DIVISOR: 10, // 이동거리 → 점수 환산 (px → m 환산에도 사용)
 } as const;
+
+// WP6 맵/테마. 누적 주행거리(m)로 해금. 아트 확보 시 항목 추가.
+export const MAPS = [
+  { key: "map1", name: "도심 재건축", unlockM: 0 },
+  { key: "map2", name: "아파트 골조", unlockM: 3000 },
+] as const;
 
 // 코믹 대사 (5단계). 실제 브랜드명 미사용, 가상의 현장 인물.
 export const DIALOGUE = {

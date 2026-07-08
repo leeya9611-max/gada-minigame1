@@ -106,12 +106,13 @@ export class Player {
     }
   }
 
-  // 상태 → 스프라이트 프레임 (run1/run2 교차, jump/fall/slide/hurt)
+  // 상태 → 스프라이트 프레임 (런 6프레임 사이클, jump/fall/slide/hurt)
   private currentSprite(now: number): HTMLImageElement | null {
     if (this.isInvuln(now)) return sprite("gb_hurt");
     if (this.sliding) return sprite("gb_slide");
     if (!this.onGround) return sprite(this.vy < 0 ? "gb_jump" : "gb_fall");
-    return sprite(Math.floor(this.runFrame) % 2 === 0 ? "gb_run1" : "gb_run2");
+    const RUN = ["gb_run1", "gb_run2", "gb_run3", "gb_run4", "gb_run5", "gb_run6"] as const;
+    return sprite(RUN[Math.floor(this.runFrame) % RUN.length]);
   }
 
   draw(ctx: CanvasRenderingContext2D, now: number) {
@@ -122,10 +123,11 @@ export class Player {
     // WP4: 스프라이트 렌더(히트박스는 유지, 그림만 얹음). 미로드 시 벡터 폴백.
     const img = this.currentSprite(now);
     if (img) {
-      // 발끝을 지면에 정렬, 히트박스보다 약간 크게(시각 보정)
-      const dh = PLAYER.H * 1.12;
+      // 발끝을 지면에 정렬, 히트박스보다 약간 크게(시각 보정).
+      // 슬라이드는 와이드 포즈라 낮은 히트박스 높이에 맞춰 별도 스케일.
+      const dh = this.sliding ? this.slideH * 1.55 : PLAYER.H * 1.12;
       const dw = dh * (img.width / img.height);
-      const cx = this.x + PLAYER.W / 2;
+      const cx = this.x + PLAYER.W / 2 + (this.sliding ? 12 : 0);
       const bottom = this.sliding ? GROUND_Y : this.y + PLAYER.H;
       if (this.sliding) {
         // 슬라이드 흙먼지
