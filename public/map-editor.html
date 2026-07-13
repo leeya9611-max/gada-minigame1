@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>야리끼리 대소동 — 맵(노선) 에디터 (WYSIWYG)</title>
+<style>
+  :root{--bg:#0e1526;--panel:#182338;--line:#2b3a58;--txt:#e8eefc;--muted:#94a6cc;--accent:#ffc01d;}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;}
+  body{background:var(--bg);color:var(--txt);height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+  header{padding:8px 14px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+  header h1{font-size:15px;font-weight:800;color:var(--accent);}
+  header .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);}
+  header input{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px 6px;font-size:12px;}
+  header input[type=text]{width:150px;} header input[type=number]{width:60px;}
+  .main{flex:1;display:flex;min-height:0;}
+  .tools{width:200px;border-right:1px solid var(--line);padding:10px;overflow:auto;background:#0b1120;}
+  .tools h3{font-size:11px;color:var(--muted);margin:12px 0 6px;}
+  .tools h3:first-child{margin-top:0;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .tool{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 4px;cursor:pointer;text-align:center;user-select:none;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--txt);}
+  .tool .ico{font-size:22px;line-height:1;height:26px;display:flex;align-items:center;}
+  .tool .ico img{height:26px;width:auto;image-rendering:auto;}
+  .tool .lb{font-size:10.5px;color:var(--muted);}
+  .tool:hover{border-color:#4a6091;}
+  .tool.on{background:var(--accent);border-color:var(--accent);}
+  .tool.on .lb{color:#5a3d00;}
+  .act{background:#1f2b45;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:9px 6px;font-size:12px;cursor:pointer;text-align:center;}
+  .act:hover{background:#26334f;} .act.wide{grid-column:1/3;font-weight:700;}
+  .stage{flex:1;position:relative;overflow:hidden;background:#0a1020;}
+  canvas{display:block;}
+  .hint{position:absolute;top:8px;left:12px;font-size:13px;color:#fff;background:rgba(10,16,32,.6);padding:4px 10px;border-radius:8px;pointer-events:none;}
+  .navbtns{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;}
+  .navbtns .act{width:46px;font-size:16px;}
+  footer{border-top:1px solid var(--line);padding:6px 14px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;}
+  input[type=file]{display:none;}
+</style>
+</head>
+<body>
+<header>
+  <h1>야리끼리 노선 에디터</h1>
+  <div class="meta">
+    <label>이름 <input type="text" id="mName" value="1노선 도심 재건축"></label>
+    <label>번호 <input type="number" id="mIndex" value="1" min="1" max="5"></label>
+    <label>길이(칸) <input type="number" id="mCols" value="120" min="20" max="600"></label>
+    <label>기본속도 <input type="number" id="mSpeed" value="300"></label>
+    <label>속도상승 <input type="number" id="mRamp" value="2" step="0.5"></label>
+  </div>
+</header>
+<div class="main">
+  <div class="tools">
+    <h3>🏗 지형 (바닥)</h3><div class="grid" id="tTerrain"></div>
+    <h3>🚧 장애물</h3><div class="grid" id="tObs"></div>
+    <h3>🪙 아이템 · 코인</h3><div class="grid" id="tItem"></div>
+    <h3>파일</h3>
+    <div class="grid">
+      <div class="act wide" id="bTest">▶ 플레이 테스트</div>
+      <div class="act" id="bSave">💾 저장</div>
+      <div class="act" id="bLoad">📂 불러오기</div>
+      <div class="act" id="bCopy">📋 복사</div>
+      <div class="act" id="bClear">🗑 초기화</div>
+    </div>
+    <input type="file" id="fileInput" accept="application/json">
+  </div>
+  <div class="stage">
+    <div class="hint" id="hint">에셋 불러오는 중…</div>
+    <canvas id="cv"></canvas>
+    <div class="navbtns"><div class="act" id="navL">◀</div><div class="act" id="navR">▶</div></div>
+  </div>
+</div>
+<footer>
+  <span id="stat">칸 0 · 오브젝트 0</span>
+  <span>휠=가로 스크롤 · 우클릭=지우기 · 드래그=연속 배치 · 노란 점선=점프로 닿는 높이</span>
+</footer>
+<script>
+const A='assets/';
+// 타입 → [스프라이트경로 or 이모지, 배치(ground/air/terrain), 라벨]
+const T={
+  flat:['▬','terrain','평지'], up:['⛰','terrain','오르막'], down:['🕳','terrain','내리막'], gap:['⬛','terrain','구멍'],
+  obs_low:[A+'sprites/obstacles/cement.png','ground','시멘트 웅덩이'],
+  obs_high:[A+'sprites/obstacles/crate.png','ground','자재 더미'],
+  obs_air:[A+'sprites/obstacles/hazard.png','air','공중 장애물'],
+  obs_fall:[A+'sprites/obstacles/post.png','air','낙하물'],
+  coin:[A+'sprites/items/coin_gold.png','air','코인'],
+  dash:[A+'sprites/items/booster_star.png','air','부스터'],
+  heart:['❤️','air','하트'], coffee:['☕','air','커피'], magnet:['🧲','air','자석'], erase:['🧽','tool','지우개'],
+};
+const BG={sky:A+'maps/map1/sky.png', silo:A+'maps/map1/silhouette.png', ground:A+'maps/map1/ground.png',
+          char:A+'sprites/gimbanjang_custom/run1.png'};
+const IMG={};
+function load(src){return new Promise(r=>{if(!src||src.length<4||!src.includes('/'))return r();const i=new Image();i.onload=()=>{IMG[src]=i;r();};i.onerror=()=>r();i.src=src;});}
+
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const CELL=54,HSLOT=30,JUMP_PX=150;
+let cols=120,scroll=0,tool='obs_low';
+let terrain=new Array(cols).fill('flat'),objs=[];
+
+// 팔레트(스프라이트 썸네일/이모지)
+function ico(v){return (v&&v.includes('/'))?`<img src="${v}">`:`<span>${v}</span>`;}
+function build(el,keys){el.innerHTML=keys.map(k=>`<div class="tool" data-tool="${k}"><span class="ico">${ico(T[k][0])}</span><span class="lb">${T[k][2]}</span></div>`).join('');}
+build(document.getElementById('tTerrain'),['flat','up','down','gap']);
+build(document.getElementById('tObs'),['obs_low','obs_high','obs_air','obs_fall']);
+build(document.getElementById('tItem'),['coin','dash','heart','coffee','magnet','erase']);
+
+function resize(){cv.width=cv.parentElement.clientWidth;cv.height=cv.parentElement.clientHeight;draw();}
+window.addEventListener('resize',resize);
+
+function groundInfo(){let h=0,a=[];for(let c=0;c<cols;c++){const t=terrain[c];if(t==='up')h=Math.min(3,h+1);else if(t==='down')h=Math.max(-1,h-1);a.push({h,gap:t==='gap'});}return a;}
+function baseY(){return cv.height*0.76;}
+function gY(gi,c){return baseY()-gi[Math.max(0,Math.min(cols-1,c))].h*30;}
+const CH=()=>cv.height*0.23;   // 캐릭터 높이(스케일 기준)
+
+function tiled(img,yTop,hgt,par){if(!img)return;const w=img.width*(hgt/img.height);let off=-(scroll*par)%w;if(off>0)off-=w;for(let x=off;x<cv.width+w;x+=w)ctx.drawImage(img,x,yTop,w,hgt);}
+function spriteH(img,h){return img.width*(h/img.height);}
+
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // 배경(하늘·실루엣) 패럴랙스
+  if(IMG[BG.sky])tiled(IMG[BG.sky],0,cv.height*0.85,0.12); else{ctx.fillStyle='#16233f';ctx.fillRect(0,0,cv.width,cv.height);}
+  if(IMG[BG.silo])tiled(IMG[BG.silo],cv.height*0.28,cv.height*0.5,0.35);
+  const gi=groundInfo();
+  const sc=Math.max(0,Math.floor(scroll/CELL)),ec=Math.min(cols,sc+Math.ceil(cv.width/CELL)+2);
+  // 바닥 흙 채우기(지형 프로파일)
+  ctx.beginPath();let st=false;
+  for(let c=sc;c<=ec;c++){const x=c*CELL-scroll,y=gY(gi,c);if(gi[Math.min(cols-1,c)].gap){if(st){ctx.lineTo(x,cv.height);st=false;}continue;}if(!st){ctx.moveTo(x,cv.height);ctx.lineTo(x,y);st=true;}else ctx.lineTo(x,y);}
+  if(st)ctx.lineTo(ec*CELL-scroll,cv.height);ctx.fillStyle='#8a5a2f';ctx.fill();
+  // 바닥 표면 텍스처(ground.png) 칸별
+  const g=IMG[BG.ground],gsurf=44;
+  for(let c=sc;c<ec;c++){if(gi[Math.min(cols-1,c)].gap)continue;const x=c*CELL-scroll,y=gY(gi,c);
+    if(g)ctx.drawImage(g,(c*CELL)%(g.width-CELL),0,CELL,g.height,x,y-6,CELL,gsurf);
+    else{ctx.fillStyle='#3a5177';ctx.fillRect(x,y,CELL,6);}}
+  // 칸 번호
+  ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.fillStyle='rgba(255,255,255,.35)';ctx.font='11px sans-serif';
+  for(let c=sc;c<ec;c++){if(c%5===0)ctx.fillText(c,c*CELL-scroll+CELL/2,16);}
+  // 점프 높이 가이드
+  ctx.setLineDash([6,6]);ctx.strokeStyle='rgba(255,208,64,.45)';ctx.beginPath();ctx.moveTo(0,baseY()-JUMP_PX);ctx.lineTo(cv.width,baseY()-JUMP_PX);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,208,64,.7)';ctx.textAlign='left';ctx.fillText('▲ 점프로 닿는 높이',8,baseY()-JUMP_PX-5);
+  // 오브젝트(실제 스프라이트)
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  objs.forEach(o=>{if(o.col<sc-1||o.col>ec)return;const m=T[o.type];const isG=m[1]==='ground';
+    const gy=gY(gi,o.col),x=o.col*CELL-scroll+CELL/2;const img=IMG[m[0]];
+    if(isG){const h=o.type==='obs_high'?CH()*0.85:CH()*0.45;if(img){const w=spriteH(img,h);ctx.drawImage(img,x-w/2,gy-h,w,h);}else{ctx.fillStyle='#c07a3c';ctx.fillRect(x-18,gy-h,36,h);}}
+    else{const y=gy-o.slot*HSLOT-HSLOT*0.7;
+      ctx.strokeStyle='rgba(255,255,255,.15)';ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(x,gy);ctx.lineTo(x,y+14);ctx.stroke();ctx.setLineDash([]);
+      const h=o.type==='coin'?26:CH()*0.4;if(img){const w=spriteH(img,h);ctx.drawImage(img,x-w/2,y-h/2,w,h);}else{ctx.font=(h)+'px sans-serif';ctx.fillText(m[0],x,y);}}
+  });
+  // 김반장 기준 마커(실제 스프라이트)
+  const ch=IMG[BG.char];const gyL=gY(gi,sc);if(ch){const h=CH(),w=spriteH(ch,h);ctx.drawImage(ch,20,gyL-h,w,h);}
+  document.getElementById('stat').textContent=`칸 ${cols} · 오브젝트 ${objs.length}`;
+}
+
+function cellAt(e){const r=cv.getBoundingClientRect();const mx=e.clientX-r.left+scroll,my=e.clientY-r.top;const col=Math.floor(mx/CELL);const gi=groundInfo();const gy=gY(gi,col);const slot=Math.max(0,Math.round((gy-my-HSLOT*0.7)/HSLOT));return{col,slot};}
+function place(e,fe){const{col,slot}=cellAt(e);if(col<0||col>=cols)return;
+  if(fe||tool==='erase'){objs=objs.filter(o=>!(o.col===col&&Math.abs(o.slot-slot)<=1));if(fe)terrain[col]='flat';draw();return;}
+  if(T[tool][1]==='terrain'){terrain[col]=tool;draw();return;}
+  const s=T[tool][1]==='ground'?0:Math.max(1,slot);objs=objs.filter(o=>!(o.col===col&&o.slot===s));objs.push({col,slot:s,type:tool});draw();}
+let drag=false;
+cv.addEventListener('mousedown',e=>{if(e.button===2)place(e,true);else{drag=true;place(e,false);}});
+cv.addEventListener('mousemove',e=>{if(drag)place(e,false);});
+window.addEventListener('mouseup',()=>drag=false);
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('wheel',e=>{e.preventDefault();scroll=Math.max(0,Math.min(Math.max(0,cols*CELL-cv.width),scroll+e.deltaY+e.deltaX));draw();},{passive:false});
+document.getElementById('navL').onclick=()=>{scroll=Math.max(0,scroll-CELL*6);draw();};
+document.getElementById('navR').onclick=()=>{scroll=Math.min(Math.max(0,cols*CELL-cv.width),scroll+CELL*6);draw();};
+document.querySelectorAll('.tool[data-tool]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tool').forEach(x=>x.classList.remove('on'));b.classList.add('on');tool=b.dataset.tool;document.getElementById('hint').textContent=tool==='erase'?'🧽 지우개 — 클릭으로 지우기':`${T[tool][2]} 배치 중`;});
+document.querySelector('.tool[data-tool="obs_low"]').classList.add('on');
+document.getElementById('mCols').onchange=e=>{const n=Math.max(20,Math.min(600,+e.target.value));if(n>cols)terrain=terrain.concat(new Array(n-cols).fill('flat'));else{terrain=terrain.slice(0,n);objs=objs.filter(o=>o.col<n);}cols=n;draw();};
+
+function levelData(){return{id:'route'+mIndex.value,name:mName.value,index:+mIndex.value,cols,cellSize:CELL,baseSpeed:+mSpeed.value,speedRamp:+mRamp.value,terrain:[...terrain],objects:objs.map(o=>({col:o.col,slot:o.slot,type:o.type}))};}
+function loadData(d){mName.value=d.name||'';mIndex.value=d.index||1;mSpeed.value=d.baseSpeed||300;mRamp.value=d.speedRamp||2;cols=d.cols||120;mCols.value=cols;terrain=(d.terrain&&d.terrain.length===cols)?d.terrain:new Array(cols).fill('flat');objs=(d.objects||[]).map(o=>({col:o.col,slot:o.slot,type:o.type}));scroll=0;draw();}
+bSave.onclick=()=>{const b=new Blob([JSON.stringify(levelData(),null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=(mName.value||'route')+'.json';a.click();};
+bCopy.onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(levelData(),null,2));hint.textContent='📋 JSON 복사 완료';}catch(_){alert('복사 실패 — 저장 버튼 사용');}};
+bLoad.onclick=()=>fileInput.click();
+fileInput.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{loadData(JSON.parse(r.result));}catch(err){alert('불러오기 실패: '+err.message);}};r.readAsText(f);};
+bClear.onclick=()=>{if(confirm('전부 지울까요?')){terrain=new Array(cols).fill('flat');objs=[];draw();}};
+let testId=null;
+bTest.onclick=()=>{if(testId){cancelAnimationFrame(testId);testId=null;bTest.textContent='▶ 플레이 테스트';return;}bTest.textContent='⏹ 정지';let px=0,last=performance.now();const spd=+mSpeed.value;
+  const loop=t=>{const dt=Math.min(.05,(t-last)/1000);last=t;px+=spd*dt;scroll=Math.max(0,Math.min(Math.max(0,cols*CELL-cv.width),px-cv.width*0.25));draw();
+    const gi=groundInfo();const gy=gY(gi,Math.floor(px/CELL));const ch=IMG[BG.char];if(ch){const h=CH(),w=spriteH(ch,h);ctx.drawImage(ch,px-scroll-w/2,gy-h,w,h);}
+    if(px<cols*CELL)testId=requestAnimationFrame(loop);else{testId=null;bTest.textContent='▶ 플레이 테스트';}};testId=requestAnimationFrame(loop);};
+
+// 에셋 프리로드 후 시작
+const all=[...Object.values(BG),...Object.values(T).map(v=>v[0])];
+Promise.all(all.map(load)).then(()=>{document.getElementById('hint').textContent='도구를 고르고 트랙을 클릭·드래그하세요.';resize();});
+resize();
+</script>
+</body>
+</html>

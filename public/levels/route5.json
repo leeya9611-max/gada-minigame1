@@ -1,0 +1,888 @@
+{
+ "id": "route5",
+ "name": "5노선 지하 터널",
+ "index": 5,
+ "cols": 300,
+ "cellSize": 54,
+ "baseSpeed": 435,
+ "speedRamp": 3.4,
+ "terrain": [
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "up",
+  "up",
+  "down",
+  "down",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "up",
+  "down",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "up",
+  "down",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat"
+ ],
+ "objects": [
+  {
+   "col": 5,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 6,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 7,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 8,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 9,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 24,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 26,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 27,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 28,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 29,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 30,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 32,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 33,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 34,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 36,
+   "slot": 0,
+   "type": "obs_high"
+  },
+  {
+   "col": 42,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 51,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 52,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 53,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 54,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 54,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 55,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 64,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 70,
+   "slot": 2,
+   "type": "obs_fall"
+  },
+  {
+   "col": 76,
+   "slot": 2,
+   "type": "obs_fall"
+  },
+  {
+   "col": 78,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 79,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 80,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 86,
+   "slot": 0,
+   "type": "obs_high"
+  },
+  {
+   "col": 90,
+   "slot": 2,
+   "type": "coffee"
+  },
+  {
+   "col": 92,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 98,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 100,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 101,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 102,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 103,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 104,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 108,
+   "slot": 2,
+   "type": "obs_fall"
+  },
+  {
+   "col": 114,
+   "slot": 2,
+   "type": "obs_fall"
+  },
+  {
+   "col": 124,
+   "slot": 0,
+   "type": "obs_high"
+  },
+  {
+   "col": 134,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 135,
+   "slot": 3,
+   "type": "magnet"
+  },
+  {
+   "col": 136,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 137,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 138,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 139,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 140,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 146,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 147,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 148,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 161,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 163,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 164,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 165,
+   "slot": 2,
+   "type": "heart"
+  },
+  {
+   "col": 165,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 172,
+   "slot": 2,
+   "type": "obs_fall"
+  },
+  {
+   "col": 178,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 180,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 181,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 182,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 183,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 184,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 184,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 185,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 186,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 187,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 188,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 189,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 190,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 194,
+   "slot": 0,
+   "type": "obs_high"
+  },
+  {
+   "col": 194,
+   "slot": 2,
+   "type": "dash"
+  },
+  {
+   "col": 196,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 197,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 198,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 199,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 200,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 203,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 204,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 205,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 206,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 207,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 211,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 213,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 214,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 215,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 216,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 217,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 228,
+   "slot": 0,
+   "type": "obs_high"
+  },
+  {
+   "col": 238,
+   "slot": 2,
+   "type": "obs_fall"
+  },
+  {
+   "col": 240,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 241,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 242,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 243,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 244,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 245,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 248,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 250,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 251,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 252,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 253,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 254,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 255,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 258,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 260,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 261,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 262,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 263,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 264,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 268,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 270,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 271,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 272,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 273,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 274,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 275,
+   "slot": 3,
+   "type": "coin"
+  }
+ ]
+}

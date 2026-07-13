@@ -1,19 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GameEngine } from "./engine/GameEngine";
 import { loadSprites } from "./engine/sprites";
 import type { MapKey } from "./engine/Background";
-import { CHASE, MAPS, VIEW } from "./engine/config";
-import { addMeters, loadTotalMeters } from "@/lib/progress";
-import { playSfx } from "@/lib/sfx";
-import type { GameResult, HudState } from "./engine/types";
+import { CHASE, ROUTES, VIEW } from "./engine/config";
+import { loadLevel, type LevelData, type RouteId } from "./engine/level";
+import type { GameMode, GameResult, HudState } from "./engine/types";
 import { parseToken } from "@/lib/auth";
 import { requestNativeAction, sendResultToNative } from "@/lib/api";
 import type { NativeAction } from "@/lib/api";
 import { loadTickets, newSessionId, saveTickets } from "@/lib/tickets";
+import {
+  addMeters,
+  computeStars,
+  loadEduDone,
+  loadRouteProgress,
+  loadTotalMeters,
+  saveEduDone,
+  saveRouteResult,
+  type RouteProgress,
+} from "@/lib/progress";
+import { playSfx } from "@/lib/sfx";
+import {
+  fetchNickname,
+  generateNickname,
+  loadNickname,
+  registerNickname,
+  validateNickname,
+} from "@/lib/nickname";
 import Link from "next/link";
 
+const APP_VERSION = "v0.2.0";
 // 포인트-티켓 교환비 미확정(보류 항목) → 임시 환산율로 표시만
 const POINT_RATE = 0.1;
 
@@ -24,24 +42,46 @@ const INITIAL_HUD: HudState = {
   hp: 3,
   boosterActive: false,
   slowActive: false,
+  magnetActive: false,
   gap: CHASE.START_GAP,
   chaseRatio: CHASE.START_GAP / CHASE.MAX_GAP,
+  progress: 0,
+  finale: false,
   dialogue: null,
 };
+
+type Screen = "title" | "nickname" | "lobby" | "game";
 
 export default function Game({ token }: { token?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
   const [hud, setHud] = useState<HudState>(INITIAL_HUD);
   const [result, setResult] = useState<GameResult | null>(null);
+  const [screen, setScreen] = useState<Screen>("title");
+
+  // 유저 식별 (토큰 → userId). 닉네임은 userId에 귀속.
+  const user = useMemo(() => parseToken(token), [token]);
+
+  // 닉네임: 로컬 캐시 즉시 반영 → 서버 조회로 보정(기기 변경·캐시 삭제 대응)
+  const [nickname, setNickname] = useState<string | null>(null);
+  useEffect(() => {
+    setNickname(loadNickname(user.userId));
+    let alive = true;
+    void fetchNickname(user.userId).then((n) => {
+      if (alive && n) setNickname(n);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [user.userId]);
 
   // WP5: 티켓(표시용)·세션·충전(S5) 화면
   const [tickets, setTickets] = useState(0);
   const [showCharge, setShowCharge] = useState(false);
   const sessionRef = useRef<string>("");
-  useEffect(() => setTickets(loadTickets()), []); // 클라이언트에서 로드
+  useEffect(() => setTickets(loadTickets()), []);
 
-  // WP4: 스프라이트 프리로드 완료 후 시작 허용
+  // WP4: 스프라이트 프리로드
   const [spritesLoaded, setSpritesLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -51,16 +91,18 @@ export default function Game({ token }: { token?: string }) {
     };
   }, []);
 
-  // WP6: 맵 선택·누적거리 해금
-  const [mapKey, setMapKey] = useState<MapKey>("map1");
+  // WP6.5: 노선 진행(별점)·선택·레벨 캐시
+  const [routeProgress, setRouteProgress] = useState<RouteProgress>({});
+  const [selectedRoute, setSelectedRoute] = useState<RouteId>("route1");
   const [totalM, setTotalM] = useState(0);
-  useEffect(() => setTotalM(loadTotalMeters()), []);
-  const selectMap = useCallback((key: MapKey) => {
-    setMapKey(key);
-    engineRef.current?.setMap(key);
+  const [lastStars, setLastStars] = useState(0);
+  const levelCache = useRef<Map<string, LevelData>>(new Map());
+  useEffect(() => {
+    setRouteProgress(loadRouteProgress());
+    setTotalM(loadTotalMeters());
   }, []);
 
-  // 1플레이 = 1티켓. 부족하면 S5 노출 후 false.
+  // 1플레이 = 1티켓
   const consumeTicket = useCallback((): boolean => {
     if (tickets <= 0) {
       setShowCharge(true);
@@ -73,23 +115,48 @@ export default function Game({ token }: { token?: string }) {
     return true;
   }, [tickets]);
 
-  // S1 → S2 시작: 버튼 클릭음 + 화이트 플래시 트랜지션
-  const [flash, setFlash] = useState(false);
-  const startGame = useCallback(() => {
-    if (!spritesLoaded || showCharge) return;
-    if (!consumeTicket()) return;
-    playSfx("button_click");
-    setFlash(true);
-    engineRef.current?.onTap();
-    window.setTimeout(() => setFlash(false), 450);
-  }, [spritesLoaded, showCharge, consumeTicket]);
+  const currentRouteRef = useRef<RouteId>("route1");
+
+  // E2: 안전교육 이수 게이트 + 현재 플레이 모드(재도전 티켓 분기용)
+  const [eduDone, setEduDone] = useState(false);
+  useEffect(() => setEduDone(loadEduDone()), []);
+  const currentModeRef = useRef<GameMode>("route");
+  // 방금 이수 완료(첫 이수 연출용)
+  const [justUnlocked, setJustUnlocked] = useState(false);
+
+  // 결과 전달 시 최신 닉네임 참조(콜백 stale 방지)
+  const nicknameRef = useRef<string | null>(null);
+  useEffect(() => {
+    nicknameRef.current = nickname;
+  }, [nickname]);
+
+  const eduDoneRef = useRef(false);
+  useEffect(() => {
+    eduDoneRef.current = eduDone;
+  }, [eduDone]);
 
   const handleGameOver = useCallback((r: GameResult) => {
     setResult(r);
-    // WP5: 결과값 네이티브 전달 (postMessage 우선, 실패 시 콜백 스텁)
-    sendResultToNative({ ...r, sessionId: sessionRef.current, ticketUsed: 1 });
-    // WP6: 누적 주행거리 갱신(맵 해금)
+    sendResultToNative({
+      ...r,
+      sessionId: sessionRef.current,
+      ticketUsed: r.mode === "edu" ? 0 : 1, // 안전교육은 티켓 미차감
+      nickname: nicknameRef.current ?? "",
+    });
     setTotalM(addMeters(engineRef.current?.distanceM ?? 0));
+    if (r.outcome === "cleared") {
+      if (r.mode === "edu") {
+        // E2: 안전교육 이수 → 본선 즉시 해금. TODO(서버 이관): userId 기준 서버 저장.
+        setJustUnlocked(!eduDoneRef.current);
+        saveEduDone();
+        setEduDone(true);
+      } else {
+        // 별점 계산·저장 (WP6.5 — UI 미노출, 데이터는 보관)
+        const stars = computeStars(r.hits, r.coinCount, r.totalCoins);
+        setLastStars(stars);
+        setRouteProgress(saveRouteResult(r.routeId, stars, r.playDuration, r.coinCount));
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -100,67 +167,105 @@ export default function Game({ token }: { token?: string }) {
     canvas.height = VIEW.H * dpr;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.scale(dpr, dpr);
 
-    const user = parseToken(token);
+    ctx.scale(dpr, dpr);
     const engine = new GameEngine(ctx, user.userId, {
       onHud: setHud,
       onGameOver: handleGameOver,
     });
     engineRef.current = engine;
     engine.start();
-
     return () => engine.stop();
-  }, [token, handleGameOver]);
+  }, [user.userId, handleGameOver]);
 
-  // 입력: 상단 탭=점프 / 화면 하단 홀드·아래 스와이프=슬라이드
-  const gesture = useRef({ startY: 0, slid: false, hold: false });
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (result) return; // 게임오버 화면은 버튼 사용
+  // 노선 시작 — E2에서 월드맵 제거로 미사용. 보너스 미션 재활용 대비 보관(v3 지시).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [flash, setFlash] = useState(false);
+  const startRoute = useCallback(
+    async (routeId: RouteId) => {
       const eng = engineRef.current;
-      if (!eng) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const ry = (e.clientY - rect.top) / rect.height;
-      gesture.current = { startY: e.clientY, slid: false, hold: false };
-
-      // 시작 전(ready): S1 타이틀의 [퇴근 시작] 버튼으로만 시작
-      if (hud.phase !== "playing") return;
-      if (ry > 0.6) {
-        eng.slide(); // 하단 홀드
-        gesture.current.slid = true;
-        gesture.current.hold = true;
-      } else {
-        eng.onTap(); // 상단 탭 = 점프
+      if (!eng || !spritesLoaded || showCharge) return;
+      if (!consumeTicket()) return;
+      playSfx("button_click");
+      try {
+        let level = levelCache.current.get(routeId);
+        if (!level) {
+          level = await loadLevel(routeId);
+          levelCache.current.set(routeId, level);
+        }
+        const meta = ROUTES.find((r) => r.id === routeId);
+        eng.setLevel(level, (meta?.mapKey ?? "map1") as MapKey);
+        currentRouteRef.current = routeId;
+        currentModeRef.current = "route";
+        setResult(null);
+        setFlash(true);
+        setScreen("game");
+        eng.onTap();
+        window.setTimeout(() => setFlash(false), 450);
+      } catch (e) {
+        console.error("노선 로드 실패:", routeId, e);
       }
     },
-    [result, hud.phase]
+    [spritesLoaded, showCharge, consumeTicket]
   );
 
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (result || gesture.current.slid) return;
-      if (e.clientY - gesture.current.startY > 45) {
-        engineRef.current?.slide(); // 아래 스와이프(자동 기립)
-        gesture.current.slid = true;
+  // E2: 무한 잔업 모드(랭킹 본선) — 안전교육 이수 필수, 티켓 1장 차감
+  const startEndless = useCallback(() => {
+    const eng = engineRef.current;
+    if (!eng || !spritesLoaded || showCharge || !eduDone) return;
+    if (!consumeTicket()) return;
+    playSfx("button_click");
+    eng.setEndless("map1");
+    currentModeRef.current = "endless";
+    setResult(null);
+    setFlash(true);
+    setScreen("game");
+    eng.onTap();
+    window.setTimeout(() => setFlash(false), 450);
+  }, [spritesLoaded, showCharge, eduDone, consumeTicket]);
+
+  // E2: 안전교육 — 티켓 미차감, 언제든 재입장. route1 재생(E3에서 route_edu로 교체).
+  const startEdu = useCallback(async () => {
+    const eng = engineRef.current;
+    if (!eng || !spritesLoaded || showCharge) return;
+    playSfx("button_click");
+    try {
+      const routeId: RouteId = "route1";
+      let level = levelCache.current.get(routeId);
+      if (!level) {
+        level = await loadLevel(routeId);
+        levelCache.current.set(routeId, level);
       }
-    },
-    [result]
-  );
-
-  const onPointerUp = useCallback(() => {
-    if (gesture.current.hold) engineRef.current?.endSlide();
-    gesture.current.hold = false;
-  }, []);
+      sessionRef.current = newSessionId(); // 티켓 없이 세션만 발급
+      eng.setLevel(level, "map1", "edu");
+      currentModeRef.current = "edu";
+      setResult(null);
+      setFlash(true);
+      setScreen("game");
+      eng.onTap();
+      window.setTimeout(() => setFlash(false), 450);
+    } catch (e) {
+      console.error("안전교육 노선 로드 실패:", e);
+    }
+  }, [spritesLoaded, showCharge]);
 
   const restart = useCallback(() => {
-    if (!consumeTicket()) return; // 재도전도 1티켓
+    // 안전교육은 무료 재연습, 본선·노선은 티켓 1장
+    if (currentModeRef.current !== "edu" && !consumeTicket()) return;
+    playSfx("button_click");
     setResult(null);
     engineRef.current?.restart();
   }, [consumeTicket]);
 
-  // S5: 충전 요청은 네이티브에 위임(웹은 요청만). 개발 스텁으로 +1 반영.
+  const goLobby = useCallback(() => {
+    playSfx("button_click");
+    setResult(null);
+    engineRef.current?.backToReady();
+    setScreen("lobby");
+  }, []);
+
+
+  // S5: 충전 요청(네이티브 위임) + 개발 스텁 +1
   const charge = useCallback((action: NativeAction) => {
     requestNativeAction(action);
     setTickets((t) => {
@@ -171,15 +276,61 @@ export default function Game({ token }: { token?: string }) {
     setShowCharge(false);
   }, []);
 
-  // 데스크톱 개발용: 스페이스/↑=점프(레디에선 시작), ↓/S=슬라이드
+  // ── 입력(양손, 쿠키런식): 왼쪽 절반 홀드=슬라이드 / 오른쪽 절반 탭=점프 ──
+  // 아래 스와이프 슬라이드는 보조 입력으로 유지.
+  // 손가락별(pointerId) 추적 — 왼손 슬라이드 홀드 중 오른손 점프 탭 가능.
+  const pointers = useRef(new Map<number, { startY: number; slide: boolean }>());
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (result || screen !== "game") return;
+      const eng = engineRef.current;
+      if (!eng) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const rx = (e.clientX - rect.left) / rect.width;
+      pointers.current.set(e.pointerId, { startY: e.clientY, slide: false });
+      if (hud.phase !== "playing") return;
+      if (rx < 0.5) {
+        eng.slide();
+        const p = pointers.current.get(e.pointerId);
+        if (p) p.slide = true;
+      } else {
+        eng.onTap();
+      }
+    },
+    [result, screen, hud.phase]
+  );
+
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (result) return;
+      const p = pointers.current.get(e.pointerId);
+      if (!p || p.slide) return;
+      // 오른쪽 구역에서도 아래로 45px 이상 끌면 슬라이드
+      if (e.clientY - p.startY > 45) {
+        engineRef.current?.slide();
+        p.slide = true;
+      }
+    },
+    [result]
+  );
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const p = pointers.current.get(e.pointerId);
+    pointers.current.delete(e.pointerId);
+    if (!p?.slide) return;
+    // 다른 손가락이 아직 슬라이드 홀드 중이면 유지
+    const stillSliding = Array.from(pointers.current.values()).some((v) => v.slide);
+    if (!stillSliding) engineRef.current?.endSlide();
+  }, []);
+
+  // 데스크톱: 스페이스/↑=점프, ↓/S=슬라이드
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
-      if (result) return;
+      if (result || screen !== "game") return;
       if (e.code === "Space" || e.code === "ArrowUp") {
         e.preventDefault();
-        // 레디 화면에선 버튼과 동일한 시작 절차(티켓 소모 포함)
-        if (hud.phase === "ready") startGame();
-        else engineRef.current?.onTap();
+        engineRef.current?.onTap();
       } else if (e.code === "ArrowDown" || e.code === "KeyS") {
         e.preventDefault();
         if (!e.repeat) engineRef.current?.slide();
@@ -194,9 +345,9 @@ export default function Game({ token }: { token?: string }) {
       window.removeEventListener("keydown", onDown);
       window.removeEventListener("keyup", onUp);
     };
-  }, [result, hud.phase, startGame]);
+  }, [result, screen]);
 
-  // 세로 감지 → 회전 안내. 지원 시 가로 잠금 시도(best-effort).
+  // 세로 감지 → 회전 안내
   const [isPortrait, setIsPortrait] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(orientation: portrait)");
@@ -204,7 +355,7 @@ export default function Game({ token }: { token?: string }) {
     update();
     mq.addEventListener?.("change", update);
     window.addEventListener("resize", update);
-    const so = (window.screen as Screen & { orientation?: { lock?: (o: string) => Promise<void> } }).orientation;
+    const so = (window.screen as unknown as Screen2).orientation;
     so?.lock?.("landscape").catch(() => {});
     return () => {
       mq.removeEventListener?.("change", update);
@@ -231,7 +382,6 @@ export default function Game({ token }: { token?: string }) {
         style={{
           position: "relative",
           aspectRatio: `${VIEW.W} / ${VIEW.H}`,
-          // 가로 contain: 폭을 채우고 넘치면 상하 레터박스
           width: "100%",
           maxHeight: "100%",
           touchAction: "none",
@@ -242,30 +392,81 @@ export default function Game({ token }: { token?: string }) {
           style={{ width: "100%", height: "100%", display: "block" }}
         />
 
-        {/* HUD */}
-        <TopHud hud={hud} />
-
-        {/* 박소장 추격 게이지 (WP2) */}
-        {hud.phase === "playing" && <ChaseGauge hud={hud} />}
-
-        {/* 대사 팝업 (5단계) */}
-        {hud.dialogue && hud.phase === "playing" && (
-          <DialogueBubble text={hud.dialogue} />
+        {/* 게임 HUD (S2) */}
+        {screen === "game" && hud.phase === "playing" && (
+          <>
+            <TopHud hud={hud} />
+            <ChaseGauge hud={hud} />
+            <ProgressBar hud={hud} />
+            {hud.dialogue && <DialogueBubble text={hud.dialogue} />}
+            <ControlHints />
+          </>
         )}
 
-        {/* S1 타이틀 화면 (이미지 레이어) */}
-        {hud.phase === "ready" && !showCharge && (
+        {/* S1 타이틀: 로고·버전·[퇴근 시작] */}
+        {screen === "title" && (
           <TitleScreen
-            tickets={tickets}
             loading={!spritesLoaded}
-            mapKey={mapKey}
-            totalM={totalM}
-            onSelectMap={selectMap}
-            onStart={startGame}
+            onStart={() => {
+              playSfx("button_click");
+              // 최초 1회만 닉네임 등록, 이후엔 로비 직행 (기획 2.5)
+              setScreen(nickname ? "lobby" : "nickname");
+            }}
           />
         )}
 
-        {/* 시작 화이트 플래시 트랜지션 */}
+        {/* S1.2 닉네임 등록 (최초 1회) */}
+        {screen === "nickname" && (
+          <NicknameScreen
+            userId={user.userId}
+            onDone={(name) => {
+              setNickname(name);
+              setScreen("lobby");
+            }}
+          />
+        )}
+
+        {/* S1.5 로비 — 2버튼 (E2: 안전교육 / 무한 잔업 모드) */}
+        {screen === "lobby" && !showCharge && (
+          <LobbyScreen
+            nickname={nickname}
+            tickets={tickets}
+            totalM={totalM}
+            eduDone={eduDone}
+            onStartEdu={startEdu}
+            onStartEndless={startEndless}
+            loading={!spritesLoaded}
+          />
+        )}
+
+        {/* S3a 완주 성공 — 안전교육 전용 (E2) */}
+        {screen === "game" && hud.phase === "cleared" && result && !showCharge && (
+          <ClearOverlay
+            result={result}
+            tickets={tickets}
+            justUnlocked={justUnlocked}
+            onGoEndless={startEndless}
+            onRetryEdu={restart}
+            onLobby={goLobby}
+          />
+        )}
+
+        {/* S3b 실패(게임오버) */}
+        {screen === "game" && hud.phase === "gameover" && result && !showCharge && (
+          <GameOverOverlay
+            result={result}
+            tickets={tickets}
+            onRestart={restart}
+            onLobby={goLobby}
+          />
+        )}
+
+        {/* S5 티켓 충전 */}
+        {showCharge && (
+          <ChargeOverlay onCharge={charge} onClose={() => setShowCharge(false)} />
+        )}
+
+        {/* 시작 화이트 플래시 */}
         {flash && (
           <div
             style={{
@@ -279,210 +480,27 @@ export default function Game({ token }: { token?: string }) {
           />
         )}
         <style>{`@keyframes flashOut{from{opacity:1}to{opacity:0}}`}</style>
-
-        {/* 게임오버 오버레이 (S4) */}
-        {hud.phase === "gameover" && result && !showCharge && (
-          <GameOverOverlay result={result} tickets={tickets} onRestart={restart} />
-        )}
-
-        {/* 티켓 충전 (S5) */}
-        {showCharge && (
-          <ChargeOverlay onCharge={charge} onClose={() => setShowCharge(false)} />
-        )}
       </div>
 
-      {/* 세로일 때 가로 회전 안내 (WP0) */}
       {isPortrait && <RotateHint />}
     </main>
   );
 }
 
-function RotateHint() {
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 100,
-        background: "#0e1526",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 18,
-        color: "#fff",
-        textAlign: "center",
-        padding: 24,
-      }}
-    >
-      <div style={{ fontSize: 54, animation: "rotateHint 1.6s ease-in-out infinite" }}>📱</div>
-      <div style={{ fontSize: 20, fontWeight: 800 }}>가로로 돌려주세요</div>
-      <div style={{ fontSize: 14, color: "#9fb0cc", lineHeight: 1.6 }}>
-        야리끼리 대소동은 가로 화면에 최적화되어 있어요.
-        <br />
-        기기를 가로로 회전하면 게임이 시작됩니다.
-      </div>
-      <style>{`@keyframes rotateHint{0%,100%{transform:rotate(-12deg)}50%{transform:rotate(78deg)}}`}</style>
-    </div>
-  );
+interface Screen2 {
+  orientation?: { lock?: (o: string) => Promise<void> };
 }
 
-function ChaseGauge({ hud }: { hud: HudState }) {
-  const r = hud.chaseRatio;
-  // 안전(초록) → 주의(주황) → 위기(빨강)
-  const color = r > 0.55 ? "#37c871" : r > 0.3 ? "#ff9500" : "#e63946";
-  const danger = r <= 0.3;
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: 62,
-        left: 14,
-        right: 14,
-        pointerEvents: "none",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          marginBottom: 3,
-          fontSize: 11,
-          fontWeight: 700,
-          color: danger ? "#ff6b6b" : "#cdd8ec",
-          textShadow: "0 1px 2px rgba(0,0,0,.4)",
-        }}
-      >
-        <span>🏃 박소장 추격</span>
-        {danger && <span>· 따라잡히기 직전!</span>}
-      </div>
-      <div
-        style={{
-          height: 8,
-          borderRadius: 999,
-          background: "rgba(0,0,0,0.28)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            height: "100%",
-            width: `${Math.round(r * 100)}%`,
-            background: color,
-            borderRadius: 999,
-            transition: "width 0.12s linear, background 0.2s",
-            animation: danger ? "chasePulse 0.6s ease-in-out infinite" : "none",
-          }}
-        />
-      </div>
-      <style>{`@keyframes chasePulse{0%,100%{opacity:1}50%{opacity:0.5}}`}</style>
-    </div>
-  );
-}
-
-function TopHud({ hud }: { hud: HudState }) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        padding: "12px 14px",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-start",
-        color: "#fff",
-        pointerEvents: "none",
-      }}
-    >
-      <div>
-        <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-          {[0, 1, 2].map((i) => (
-            <span key={i} style={{ fontSize: 18, filter: i < hud.hp ? "none" : "grayscale(1) opacity(0.35)" }}>
-              🪖
-            </span>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {hud.boosterActive && <Badge color="#ff9500">⚡ 무적</Badge>}
-          {hud.slowActive && <Badge color="#e63946">🐢 피격 감속</Badge>}
-        </div>
-      </div>
-      <div style={{ textAlign: "right", textShadow: "0 1px 3px rgba(0,0,0,.4)" }}>
-        <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1 }}>
-          {hud.score.toLocaleString()}
-        </div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#ffd23f" }}>
-          🟡 {hud.coins}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Badge({ color, children }: { color: string; children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        background: color,
-        color: "#fff",
-        fontSize: 12,
-        fontWeight: 700,
-        padding: "3px 8px",
-        borderRadius: 999,
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
-function DialogueBubble({ text }: { text: string }) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: "18%",
-        left: "50%",
-        transform: "translateX(-50%)",
-        background: "rgba(31,42,68,0.92)",
-        color: "#fff",
-        padding: "10px 16px",
-        borderRadius: 14,
-        fontSize: 15,
-        fontWeight: 600,
-        maxWidth: "80%",
-        textAlign: "center",
-        pointerEvents: "none",
-        boxShadow: "0 6px 20px rgba(0,0,0,.3)",
-      }}
-    >
-      {text}
-    </div>
-  );
-}
-
-// S1 타이틀 화면: bg(cover·슬로우 줌) + logo(팝인·둥실) + 퇴근시작 버튼(펄스·프레스)
+// ── S1 타이틀: 로고·버전·[퇴근 시작]만 ──
 function TitleScreen({
-  tickets,
   loading,
-  mapKey,
-  totalM,
-  onSelectMap,
   onStart,
 }: {
-  tickets: number;
   loading: boolean;
-  mapKey: MapKey;
-  totalM: number;
-  onSelectMap: (k: MapKey) => void;
   onStart: () => void;
 }) {
   return (
     <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-      {/* 배경: cover + 아주 느린 줌 */}
       <div
         style={{
           position: "absolute",
@@ -493,8 +511,6 @@ function TitleScreen({
           animation: "titleZoom 26s ease-in-out infinite alternate",
         }}
       />
-
-      {/* 은은한 먼지 파티클 */}
       {Array.from({ length: 6 }, (_, i) => (
         <div
           key={i}
@@ -511,8 +527,6 @@ function TitleScreen({
           }}
         />
       ))}
-
-      {/* 타이틀 로고: 팝인 후 둥실 */}
       <div
         style={{
           position: "absolute",
@@ -530,22 +544,12 @@ function TitleScreen({
           src="/assets/ui/title/logo.png"
           alt="야리끼리 대소동 — 퇴근길 런런런!"
           draggable={false}
-          style={{
-            width: "38%",
-            animation: "logoBob 3.2s ease-in-out 0.6s infinite",
-          }}
+          style={{ width: "38%", animation: "logoBob 3.2s ease-in-out 0.6s infinite" }}
         />
       </div>
-
-      {/* 퇴근 시작 버튼 */}
       <div
         onPointerDown={(e) => e.stopPropagation()}
-        style={{
-          position: "absolute",
-          bottom: "6%",
-          left: "50%",
-          transform: "translateX(-50%)",
-        }}
+        style={{ position: "absolute", bottom: "6%", left: "50%", transform: "translateX(-50%)" }}
       >
         <button
           onClick={onStart}
@@ -574,73 +578,35 @@ function TitleScreen({
           />
         </button>
       </div>
-
-      {/* 티켓 잔여 (WP5) */}
-      <div
-        style={{
-          position: "absolute",
-          top: 10,
-          right: 12,
-          background: "rgba(14,21,38,0.72)",
-          color: "#ffd23f",
-          fontSize: 15,
-          fontWeight: 800,
-          padding: "6px 14px",
-          borderRadius: 999,
-        }}
-      >
-        🎟 {tickets}
-      </div>
-
-      {/* 맵 선택 (WP6) */}
-      <div
-        onPointerDown={(e) => e.stopPropagation()}
-        style={{ position: "absolute", top: 10, left: 12, display: "flex", gap: 6 }}
-      >
-        {MAPS.map((m) => {
-          const locked = totalM < m.unlockM;
-          const active = mapKey === m.key;
-          return (
-            <button
-              key={m.key}
-              onClick={() => !locked && onSelectMap(m.key as MapKey)}
-              style={{
-                border: active ? "2px solid #ffd23f" : "2px solid transparent",
-                borderRadius: 999,
-                padding: "5px 12px",
-                fontSize: 12,
-                fontWeight: 700,
-                background: "rgba(14,21,38,0.72)",
-                color: locked ? "#7a879c" : "#fff",
-                cursor: locked ? "default" : "pointer",
-              }}
-            >
-              {locked ? `🔒 ${m.name} (${m.unlockM.toLocaleString()}m)` : m.name}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 조작 안내 / 로딩 */}
+      {/* 버전 */}
       <div
         style={{
           position: "absolute",
           bottom: 8,
-          left: 0,
-          right: 0,
-          textAlign: "center",
-          fontSize: 12,
+          right: 12,
+          fontSize: 11,
           fontWeight: 600,
-          color: "#fff",
-          textShadow: "0 1px 3px rgba(0,0,0,.7)",
-          pointerEvents: "none",
+          color: "rgba(255,255,255,0.75)",
+          textShadow: "0 1px 2px rgba(0,0,0,.6)",
         }}
       >
-        {loading
-          ? "⏳ 현장 준비 중…"
-          : `상단 탭 = 점프(2단) · 하단 홀드/아래로 = 슬라이드 · 누적 ${totalM.toLocaleString()}m`}
+        {APP_VERSION}
       </div>
-
+      {loading && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 8,
+            left: 12,
+            fontSize: 12,
+            fontWeight: 600,
+            color: "#fff",
+            textShadow: "0 1px 3px rgba(0,0,0,.7)",
+          }}
+        >
+          ⏳ 현장 준비 중…
+        </div>
+      )}
       <style>{`
         @keyframes titleZoom { from { transform: scale(1); } to { transform: scale(1.07); } }
         @keyframes logoPop { 0% { transform: scale(0.8); opacity: 0; } 60% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
@@ -654,18 +620,600 @@ function TitleScreen({
   );
 }
 
-// S4 결과 화면: 코인·랭크점수·예상 포인트·공유·랭킹·재도전 (WP5)
+// ── 조작 힌트: 왼손 슬라이드 / 오른손 점프 (양손 조작 안내) ──
+// 시작 후 4초간 보였다가 서서히 사라진다. 매 판 노출(학습 비용 낮은 타깃 배려).
+function ControlHints() {
+  const pill: React.CSSProperties = {
+    position: "absolute",
+    bottom: 14,
+    padding: "6px 14px",
+    borderRadius: 999,
+    background: "rgba(0,0,0,0.35)",
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: 800,
+    pointerEvents: "none",
+    animation: "hintFade 4s ease-out forwards",
+  };
+  return (
+    <>
+      <div style={{ ...pill, left: "12%" }}>왼쪽 누르면 슬라이드</div>
+      <div style={{ ...pill, right: "12%" }}>오른쪽 탭하면 점프</div>
+      <style>{`@keyframes hintFade{0%,70%{opacity:1}100%{opacity:0}}`}</style>
+    </>
+  );
+}
+
+// ── S1.2 닉네임 등록 (최초 1회, 기획 2.5) ──
+// 자동 생성 기본 + 다시 뽑기(주사위) + 직접 입력 전환. 타이핑 0으로 등록 가능.
+// 중복은 서버(/api/nickname)가 판정하고 대안("불도저 김씨2")을 제시한다.
+function NicknameScreen({
+  userId,
+  onDone,
+}: {
+  userId: string;
+  onDone: (name: string) => void;
+}) {
+  const [candidate, setCandidate] = useState(() => generateNickname());
+  const [manual, setManual] = useState(false);
+  const [input, setInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reroll = () => {
+    playSfx("button_click");
+    setError(null);
+    setCandidate(generateNickname(candidate));
+  };
+
+  const confirm = async () => {
+    if (busy) return;
+    const raw = manual ? input : candidate;
+    const v = validateNickname(raw);
+    if (!v.ok) {
+      setError(v.reason);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const res = await registerNickname(userId, v.name);
+    setBusy(false);
+    if (res.ok) {
+      playSfx("button_click");
+      onDone(res.name);
+      return;
+    }
+    if (res.reason === "duplicate") {
+      // 서버 대안을 후보로 올려 원탭 재확정 가능하게
+      setError(`이미 사용 중인 이름이에요. "${res.suggestion}"은 어때요?`);
+      setManual(false);
+      setCandidate(res.suggestion);
+      return;
+    }
+    setError("사용할 수 없는 이름이에요");
+  };
+
+  return (
+    <div
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "linear-gradient(180deg, #1F2A44 0%, #0e1526 100%)",
+        color: "#fff",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 14,
+        padding: "16px 24px",
+        zIndex: 40,
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#8fa3c4", letterSpacing: 2 }}>
+        현장 등록
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 800 }}>랭킹판에 올릴 이름을 정해주세요</div>
+
+      {!manual ? (
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div
+            style={{
+              minWidth: 260,
+              textAlign: "center",
+              fontSize: 28,
+              fontWeight: 900,
+              color: "#ffd23f",
+              background: "rgba(255,255,255,0.06)",
+              border: "2px solid rgba(255,210,63,0.4)",
+              borderRadius: 14,
+              padding: "14px 20px",
+            }}
+          >
+            {candidate}
+          </div>
+          <button
+            onClick={reroll}
+            aria-label="다른 이름 뽑기"
+            style={{
+              background: "rgba(255,255,255,0.1)",
+              border: "none",
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: 800,
+              padding: "14px 16px",
+              borderRadius: 14,
+              cursor: "pointer",
+            }}
+          >
+            다시 뽑기
+          </button>
+        </div>
+      ) : (
+        <input
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => e.key === "Enter" && void confirm()}
+          placeholder="2~10자, 한글·영문·숫자"
+          maxLength={10}
+          autoFocus
+          style={{
+            width: 300,
+            textAlign: "center",
+            fontSize: 24,
+            fontWeight: 800,
+            color: "#ffd23f",
+            background: "rgba(255,255,255,0.06)",
+            border: "2px solid rgba(255,210,63,0.4)",
+            borderRadius: 14,
+            padding: "14px 20px",
+            outline: "none",
+          }}
+        />
+      )}
+
+      <div style={{ minHeight: 20, fontSize: 13, fontWeight: 700, color: "#ff7a6b" }}>
+        {error}
+      </div>
+
+      <button
+        onClick={() => void confirm()}
+        disabled={busy || (manual && input.trim().length < 2)}
+        style={{
+          background: busy ? "#5d6b84" : "#ffd23f",
+          color: "#1F2A44",
+          border: "none",
+          fontSize: 18,
+          fontWeight: 900,
+          padding: "14px 44px",
+          borderRadius: 999,
+          cursor: busy ? "default" : "pointer",
+        }}
+      >
+        {busy ? "등록 중..." : "이 이름으로 참가"}
+      </button>
+
+      <button
+        onClick={() => {
+          playSfx("button_click");
+          setError(null);
+          if (!manual) setInput("");
+          setManual(!manual);
+        }}
+        style={{
+          background: "none",
+          border: "none",
+          color: "#8fa3c4",
+          fontSize: 13,
+          fontWeight: 700,
+          textDecoration: "underline",
+          cursor: "pointer",
+        }}
+      >
+        {manual ? "자동으로 뽑을래요" : "직접 입력할래요"}
+      </button>
+
+      <div style={{ fontSize: 11, color: "#5d6b84" }}>
+        닉네임은 랭킹판·명예의 전당에 표시됩니다
+      </div>
+    </div>
+  );
+}
+
+// ── S1.5 로비 (E2): [안전교육] [무한 잔업 모드] 2버튼 ──
+function LobbyScreen({
+  nickname,
+  tickets,
+  totalM,
+  eduDone,
+  onStartEdu,
+  onStartEndless,
+  loading,
+}: {
+  nickname: string | null;
+  tickets: number;
+  totalM: number;
+  eduDone: boolean;
+  onStartEdu: () => void;
+  onStartEndless: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "linear-gradient(180deg, #1F2A44 0%, #0e1526 100%)",
+        color: "#fff",
+        display: "flex",
+        flexDirection: "column",
+        padding: "14px 18px",
+      }}
+    >
+      {/* 헤더: 닉네임 + 티켓 (상점 버튼 제거 — WP7 취소) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>👷 {nickname ?? "김반장"}</div>
+          <span style={{ fontSize: 12, color: "#8fa3c4" }}>누적 {totalM.toLocaleString()}m</span>
+        </div>
+        <span
+          style={{
+            background: "rgba(255,255,255,0.1)",
+            color: "#ffd23f",
+            fontSize: 14,
+            fontWeight: 800,
+            padding: "4px 12px",
+            borderRadius: 999,
+          }}
+        >
+          🎟 {tickets}
+        </span>
+      </div>
+
+      {/* 2버튼: 안전교육 / 무한 잔업 모드 */}
+      <div style={{ display: "flex", gap: 14, flex: 1, alignItems: "stretch", margin: "14px 0 8px" }}>
+        {/* 안전교육 */}
+        <button
+          onClick={onStartEdu}
+          disabled={loading}
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            borderRadius: 20,
+            border: "3px solid rgba(94,200,255,0.5)",
+            background: "linear-gradient(180deg, rgba(46,102,246,0.3), rgba(46,102,246,0.12))",
+            color: "#fff",
+            cursor: loading ? "default" : "pointer",
+            opacity: loading ? 0.6 : 1,
+            position: "relative",
+          }}
+        >
+          {eduDone && (
+            <span
+              style={{
+                position: "absolute",
+                top: 10,
+                right: 12,
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#8ee6d0",
+                background: "rgba(0,0,0,0.3)",
+                padding: "3px 10px",
+                borderRadius: 999,
+              }}
+            >
+              이수 완료 ✓
+            </span>
+          )}
+          <div style={{ fontSize: 42 }}>🦺</div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>안전교육</div>
+          <div style={{ fontSize: 13, color: "#9fc4e8" }}>조작 연습 · 무료</div>
+        </button>
+
+        {/* 무한 잔업 모드 — 이수 전 잠금 */}
+        <button
+          onClick={onStartEndless}
+          disabled={loading || !eduDone}
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            borderRadius: 20,
+            border: eduDone ? "3px solid rgba(255,180,60,0.6)" : "3px solid rgba(255,255,255,0.08)",
+            background: eduDone
+              ? "linear-gradient(180deg, rgba(224,138,30,0.35), rgba(224,138,30,0.12))"
+              : "rgba(255,255,255,0.04)",
+            color: eduDone ? "#fff" : "#5d6b84",
+            cursor: loading || !eduDone ? "default" : "pointer",
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          <div style={{ fontSize: 42 }}>{eduDone ? "🔥" : "🔒"}</div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>무한 잔업 모드</div>
+          <div style={{ fontSize: 13, color: eduDone ? "#f0c58a" : "#5d6b84" }}>
+            {eduDone ? "랭킹전 · 티켓 1장" : "안전교육 이수 후 참가 가능"}
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+// ── S2 HUD ──
+function TopHud({ hud }: { hud: HudState }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        padding: "12px 14px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        color: "#fff",
+        pointerEvents: "none",
+      }}
+    >
+      <div>
+        <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              style={{ fontSize: 18, filter: i < hud.hp ? "none" : "grayscale(1) opacity(0.35)" }}
+            >
+              🪖
+            </span>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {hud.boosterActive && <Badge color="#ff9500">⚡ 무적</Badge>}
+          {hud.magnetActive && <Badge color="#5ec8ff">🧲 자석</Badge>}
+          {hud.slowActive && <Badge color="#e63946">🐢 피격 감속</Badge>}
+        </div>
+      </div>
+      <div style={{ textAlign: "right", textShadow: "0 1px 3px rgba(0,0,0,.4)" }}>
+        <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1 }}>
+          {hud.score.toLocaleString()}
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#ffd23f" }}>🟡 {hud.coins}</div>
+      </div>
+    </div>
+  );
+}
+
+function Badge({ color, children }: { color: string; children: React.ReactNode }) {
+  return (
+    <span
+      style={{
+        background: color,
+        color: "#fff",
+        fontSize: 12,
+        fontWeight: 700,
+        padding: "3px 8px",
+        borderRadius: 999,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+// 컴팩트 추격 게이지(좌상단)
+function ChaseGauge({ hud }: { hud: HudState }) {
+  const r = hud.chaseRatio;
+  const color = r > 0.55 ? "#37c871" : r > 0.3 ? "#ff9500" : "#e63946";
+  const danger = r <= 0.3;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 64,
+        left: 14,
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        background: "rgba(14,21,38,0.55)",
+        borderRadius: 999,
+        padding: "4px 10px 4px 5px",
+        pointerEvents: "none",
+        animation: danger ? "chasePulse 0.6s ease-in-out infinite" : "none",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/assets/sprites/parksojang_custom/idle.png"
+        alt="박소장"
+        style={{ height: 22, width: "auto" }}
+        draggable={false}
+      />
+      <div
+        style={{
+          width: 96,
+          height: 7,
+          borderRadius: 999,
+          background: "rgba(0,0,0,0.35)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${Math.round(r * 100)}%`,
+            background: color,
+            borderRadius: 999,
+            transition: "width 0.12s linear, background 0.2s",
+          }}
+        />
+      </div>
+      {danger && <span style={{ fontSize: 10, fontWeight: 800, color: "#ff6b6b" }}>위험!</span>}
+      <style>{`@keyframes chasePulse{0%,100%{opacity:1}50%{opacity:0.55}}`}</style>
+    </div>
+  );
+}
+
+// 정류장까지 진행도 바(상단 중앙) — 피날레 구간 붉은 펄스
+function ProgressBar({ hud }: { hud: HudState }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 12,
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: "38%",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        pointerEvents: "none",
+      }}
+    >
+      <span style={{ fontSize: 13 }}>🏃</span>
+      <div
+        style={{
+          flex: 1,
+          height: 8,
+          borderRadius: 999,
+          background: "rgba(0,0,0,0.35)",
+          overflow: "hidden",
+          animation: hud.finale ? "chasePulse 0.5s ease-in-out infinite" : "none",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${Math.round(hud.progress * 100)}%`,
+            background: hud.finale ? "#e63946" : "#ffd23f",
+            borderRadius: 999,
+            transition: "width 0.15s linear",
+          }}
+        />
+      </div>
+      <span style={{ fontSize: 14 }}>🚌</span>
+    </div>
+  );
+}
+
+function DialogueBubble({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: "20%",
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: "rgba(31,42,68,0.92)",
+        color: "#fff",
+        padding: "10px 16px",
+        borderRadius: 14,
+        fontSize: 15,
+        fontWeight: 600,
+        maxWidth: "80%",
+        textAlign: "center",
+        pointerEvents: "none",
+        boxShadow: "0 6px 20px rgba(0,0,0,.3)",
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
+// ── S3a 완주 성공 — 안전교육 전용 (E2): 이수 → 무한 잔업 모드 개방 ──
+function ClearOverlay({
+  result,
+  tickets,
+  justUnlocked,
+  onGoEndless,
+  onRetryEdu,
+  onLobby,
+}: {
+  result: GameResult;
+  tickets: number;
+  justUnlocked: boolean;
+  onGoEndless: () => void;
+  onRetryEdu: () => void;
+  onLobby: () => void;
+}) {
+  return (
+    <div style={overlayStyle} onPointerDown={(e) => e.stopPropagation()}>
+      <div style={{ fontSize: 28, fontWeight: 800, color: "#ffd23f" }}>🦺 안전교육 이수!</div>
+      <div
+        style={{
+          fontSize: justUnlocked ? 20 : 14,
+          fontWeight: 800,
+          color: justUnlocked ? "#8ee6d0" : "#cdd8ec",
+          margin: "6px 0 14px",
+          animation: justUnlocked ? "starPop 0.6s 0.3s cubic-bezier(.34,1.56,.64,1) both" : "none",
+        }}
+      >
+        {justUnlocked ? "🔓 무한 잔업 모드 개방!" : "박소장을 따돌리고 무사 퇴근했습니다"}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <div style={resultCard}>
+          <div style={resultLabel}>기록</div>
+          <div style={{ fontSize: 26, fontWeight: 800, color: "#8ee6d0" }}>
+            {result.playDuration}s
+          </div>
+        </div>
+        <div style={resultCard}>
+          <div style={resultLabel}>코인</div>
+          <div style={{ fontSize: 26, fontWeight: 800 }}>
+            🟡 {result.coinCount}
+          </div>
+        </div>
+        <div style={resultCard}>
+          <div style={resultLabel}>피격</div>
+          <div style={{ fontSize: 26, fontWeight: 800, color: result.hits === 0 ? "#8ee6d0" : "#ffd23f" }}>
+            {result.hits === 0 ? "무피격!" : `${result.hits}회`}
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 12, color: "#8fa3c4", marginBottom: 14 }}>
+        이제 진짜 잔업이 시작됩니다 — 랭킹전에서 최대한 오래 버티세요! · 🎟 {tickets}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 500 }}>
+        <button onClick={onGoEndless} style={{ ...primaryBtn, flex: 1.4, marginBottom: 0, background: "#e08a1e" }}>
+          🔥 무한 잔업 모드 가기 (🎟 1)
+        </button>
+        <button onClick={onRetryEdu} style={{ ...secondaryBtn, flex: 1 }}>
+          다시 연습 (무료)
+        </button>
+        <button onClick={onLobby} style={{ ...secondaryBtn, flex: 0.8 }}>
+          로비
+        </button>
+      </div>
+      <style>{`@keyframes starPop{0%{transform:scale(0);opacity:0}70%{transform:scale(1.25)}100%{transform:scale(1);opacity:1}}`}</style>
+    </div>
+  );
+}
+
+// ── S3b 실패 ──
 function GameOverOverlay({
   result,
   tickets,
   onRestart,
+  onLobby,
 }: {
   result: GameResult;
   tickets: number;
   onRestart: () => void;
+  onLobby: () => void;
 }) {
   const expectedPoints = Math.floor(result.rankScore * POINT_RATE);
-
   const share = () => {
     const text = `야리끼리 대소동 ${result.rankScore.toLocaleString()}점! 김반장의 퇴근을 도와줘 🏃`;
     if (typeof navigator !== "undefined" && navigator.share) {
@@ -676,20 +1224,18 @@ function GameOverOverlay({
   };
 
   return (
-    <div style={overlayStyle}>
-      <div style={{ fontSize: 24, fontWeight: 800 }}>퇴근 실패!</div>
+    <div style={overlayStyle} onPointerDown={(e) => e.stopPropagation()}>
+      <div style={{ fontSize: 24, fontWeight: 800 }}>
+        {result.outcome === "caught" ? "덜미 잡힘!" : "퇴근 실패!"}
+      </div>
       <div style={{ color: "#cdd8ec", fontSize: 13, marginBottom: 12 }}>
-        박소장에게 붙잡혔습니다… · 🎟 {tickets}
+        {result.outcome === "caught"
+          ? "박소장에게 붙잡혔습니다… 잔업 확정"
+          : "안전모가 다 벗겨졌습니다…"}{" "}
+        · 🎟 {tickets}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          alignItems: "stretch",
-          marginBottom: 14,
-        }}
-      >
+      <div style={{ display: "flex", gap: 10, alignItems: "stretch", marginBottom: 14 }}>
         <div style={resultCard}>
           <div style={resultLabel}>랭킹 점수</div>
           <div style={{ fontSize: 30, fontWeight: 800, color: "#ffd23f" }}>
@@ -711,25 +1257,25 @@ function GameOverOverlay({
         ⏱ {result.playDuration}초 · *교환비 확정 전 임시 환산, 지급은 앱에서 처리
       </div>
 
-      <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 460 }}>
+      <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 500 }}>
         <button onClick={onRestart} style={{ ...primaryBtn, flex: 1.2, marginBottom: 0 }}>
-          다시 도전
+          {result.mode === "edu" ? "다시 연습 (무료)" : "다시 도전 (🎟 1)"}
+        </button>
+        <button onClick={onLobby} style={{ ...secondaryBtn, flex: 1 }}>
+          노선도
         </button>
         <button onClick={share} style={{ ...secondaryBtn, flex: 1 }}>
           공유
         </button>
-        <Link
-          href="/ranking"
-          style={{ ...secondaryBtn, flex: 1, textDecoration: "none" }}
-        >
-          랭킹 보기
+        <Link href="/ranking" style={{ ...secondaryBtn, flex: 1, textDecoration: "none" }}>
+          랭킹
         </Link>
       </div>
     </div>
   );
 }
 
-// S5 티켓 충전: 광고 시청 / 포인트 교환 / 친구 초대 — 요청 이벤트만(WP5)
+// ── S5 티켓 충전 ──
 function ChargeOverlay({
   onCharge,
   onClose,
@@ -738,7 +1284,7 @@ function ChargeOverlay({
   onClose: () => void;
 }) {
   return (
-    <div style={overlayStyle}>
+    <div style={overlayStyle} onPointerDown={(e) => e.stopPropagation()}>
       <div style={{ fontSize: 22, fontWeight: 800 }}>티켓이 다 떨어졌어요!</div>
       <div style={{ color: "#8fa3c4", fontSize: 13, marginBottom: 18 }}>
         충전 방법을 고르면 앱에서 처리돼요.
@@ -757,15 +1303,76 @@ function ChargeOverlay({
           <span style={chargeSub}>+1 티켓</span>
         </button>
       </div>
-      <button
-        onClick={onClose}
-        style={{ ...secondaryBtn, marginTop: 14, maxWidth: 200 }}
-      >
+      <button onClick={onClose} style={{ ...secondaryBtn, marginTop: 14, maxWidth: 200 }}>
         닫기
       </button>
     </div>
   );
 }
+
+function RotateHint() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 100,
+        background: "#0e1526",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 18,
+        color: "#fff",
+        textAlign: "center",
+        padding: 24,
+      }}
+    >
+      <div style={{ fontSize: 54, animation: "rotateHint 1.6s ease-in-out infinite" }}>📱</div>
+      <div style={{ fontSize: 20, fontWeight: 800 }}>가로로 돌려주세요</div>
+      <div style={{ fontSize: 14, color: "#9fb0cc", lineHeight: 1.6 }}>
+        야리끼리 대소동은 가로 화면에 최적화되어 있어요.
+      </div>
+      <style>{`@keyframes rotateHint{0%,100%{transform:rotate(-12deg)}50%{transform:rotate(78deg)}}`}</style>
+    </div>
+  );
+}
+
+const overlayStyle: React.CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  background: "linear-gradient(180deg, rgba(14,21,38,0.72), rgba(14,21,38,0.9))",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "#fff",
+  padding: 28,
+};
+
+const primaryBtn: React.CSSProperties = {
+  background: "#2E66F6",
+  color: "#fff",
+  border: "none",
+  padding: "14px 24px",
+  borderRadius: 999,
+  fontSize: 17,
+  fontWeight: 700,
+  marginBottom: 12,
+  cursor: "pointer",
+};
+
+const secondaryBtn: React.CSSProperties = {
+  background: "transparent",
+  color: "#cdd8ec",
+  border: "1px solid rgba(255,255,255,0.3)",
+  padding: "12px 16px",
+  borderRadius: 999,
+  fontSize: 15,
+  fontWeight: 600,
+  textAlign: "center",
+  cursor: "pointer",
+};
 
 const resultCard: React.CSSProperties = {
   background: "rgba(255,255,255,0.08)",
@@ -791,6 +1398,7 @@ function chargeCard(bg: string): React.CSSProperties {
     color: "#fff",
     fontSize: 15,
     fontWeight: 700,
+    cursor: "pointer",
   };
 }
 
@@ -799,42 +1407,4 @@ const chargeSub: React.CSSProperties = {
   fontSize: 12,
   opacity: 0.85,
   marginTop: 2,
-};
-
-const overlayStyle: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  background: "linear-gradient(180deg, rgba(14,21,38,0.72), rgba(14,21,38,0.9))",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  color: "#fff",
-  padding: 28,
-};
-
-const primaryBtn: React.CSSProperties = {
-  background: "#2E66F6",
-  color: "#fff",
-  border: "none",
-  padding: "14px 40px",
-  borderRadius: 999,
-  fontSize: 17,
-  fontWeight: 700,
-  marginBottom: 12,
-  width: "100%",
-  maxWidth: 280,
-};
-
-const secondaryBtn: React.CSSProperties = {
-  background: "transparent",
-  color: "#cdd8ec",
-  border: "1px solid rgba(255,255,255,0.3)",
-  padding: "12px 40px",
-  borderRadius: 999,
-  fontSize: 15,
-  fontWeight: 600,
-  width: "100%",
-  maxWidth: 280,
-  textAlign: "center",
 };

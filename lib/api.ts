@@ -9,6 +9,7 @@ import type { GameResult } from "@/app/game/engine/types";
 export interface NativeGameResult extends GameResult {
   sessionId: string;
   ticketUsed: number;
+  nickname: string; // 랭킹 표시명 (서버는 userId 권위, 닉네임은 표시용)
 }
 
 // 티켓 충전 등 네이티브에 위임하는 액션

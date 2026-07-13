@@ -1,0 +1,583 @@
+{
+ "id": "route3",
+ "name": "3노선 지방 산업단지",
+ "index": 3,
+ "cols": 240,
+ "cellSize": 54,
+ "baseSpeed": 365,
+ "speedRamp": 2.6,
+ "terrain": [
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "gap",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "up",
+  "down",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat",
+  "flat"
+ ],
+ "objects": [
+  {
+   "col": 5,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 6,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 7,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 8,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 9,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 19,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 25,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 35,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 37,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 38,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 39,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 40,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 41,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 42,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 47,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 48,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 49,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 50,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 51,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 61,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 71,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 72,
+   "slot": 2,
+   "type": "coffee"
+  },
+  {
+   "col": 77,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 79,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 80,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 81,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 82,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 83,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 87,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 93,
+   "slot": 2,
+   "type": "obs_fall"
+  },
+  {
+   "col": 108,
+   "slot": 3,
+   "type": "magnet"
+  },
+  {
+   "col": 125,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 132,
+   "slot": 2,
+   "type": "heart"
+  },
+  {
+   "col": 133,
+   "slot": 2,
+   "type": "obs_fall"
+  },
+  {
+   "col": 143,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 153,
+   "slot": 2,
+   "type": "obs_fall"
+  },
+  {
+   "col": 155,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 155,
+   "slot": 2,
+   "type": "dash"
+  },
+  {
+   "col": 156,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 157,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 158,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 159,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 163,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 169,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 175,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 177,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 178,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 179,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 180,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 181,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 181,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 187,
+   "slot": 0,
+   "type": "obs_high"
+  },
+  {
+   "col": 193,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 203,
+   "slot": 2,
+   "type": "obs_air"
+  },
+  {
+   "col": 205,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 206,
+   "slot": 1,
+   "type": "coin"
+  },
+  {
+   "col": 207,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 208,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 209,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 210,
+   "slot": 3,
+   "type": "coin"
+  },
+  {
+   "col": 213,
+   "slot": 0,
+   "type": "obs_low"
+  },
+  {
+   "col": 215,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 216,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 217,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 218,
+   "slot": 2,
+   "type": "coin"
+  },
+  {
+   "col": 219,
+   "slot": 2,
+   "type": "coin"
+  }
+ ]
+}

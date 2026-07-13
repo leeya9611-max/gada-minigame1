@@ -1,5 +1,5 @@
 import { GROUND_Y, PHYSICS, PLAYER, SLIDE } from "./config";
-import { sprite } from "./sprites";
+import { clipFrame, drawChar } from "./sprites";
 import type { Box } from "./types";
 
 // 김반장 캐릭터. 원터치 1단/2단 점프 + 슬라이드 물리·상태 관리.
@@ -11,11 +11,13 @@ export class Player {
   hp: number = PLAYER.MAX_HP;
   invulnUntil = 0; // 이 시각(ms)까지 무적
   runFrame = 0; // 달리기 애니메이션 프레임 누적
+  floorY: number = GROUND_Y; // 현재 지면 y — 노선 지형(오르막/내리막) 반영, 엔진이 매 프레임 갱신
   sliding = false; // 슬라이드(숙이기) 중
   slideUntil = 0; // 자동 기립 시각(ms)
+  jumpStartAt = 0; // 점프 클립(crouch→jump→apex) 재생 기준 시각
 
   get onGround(): boolean {
-    return this.y >= GROUND_Y - PLAYER.H - 0.5;
+    return this.y >= this.floorY - PLAYER.H - 0.5;
   }
 
   private get slideH(): number {
@@ -26,12 +28,13 @@ export class Player {
   get box(): Box {
     if (this.sliding) {
       const h = this.slideH;
-      return { x: this.x, y: GROUND_Y - h, w: PLAYER.W, h };
+      return { x: this.x, y: this.floorY - h, w: PLAYER.W, h };
     }
     return { x: this.x, y: this.y, w: PLAYER.W, h: PLAYER.H };
   }
 
   reset() {
+    this.floorY = GROUND_Y;
     this.y = GROUND_Y - PLAYER.H;
     this.vy = 0;
     this.jumps = 0;
@@ -48,9 +51,11 @@ export class Player {
     if (this.onGround) {
       this.vy = -PHYSICS.JUMP_V;
       this.jumps = 1;
+      this.jumpStartAt = performance.now();
     } else if (this.jumps < 2) {
       this.vy = -PHYSICS.DOUBLE_JUMP_V;
       this.jumps = 2;
+      this.jumpStartAt = performance.now(); // 2단 점프도 클립 재시작
     }
   }
 
@@ -91,7 +96,7 @@ export class Player {
     if (this.vy > PHYSICS.MAX_FALL) this.vy = PHYSICS.MAX_FALL;
     this.y += this.vy * dt;
 
-    const floor = GROUND_Y - PLAYER.H;
+    const floor = this.floorY - PLAYER.H;
     if (this.y >= floor) {
       this.y = floor;
       this.vy = 0;
@@ -106,13 +111,20 @@ export class Player {
     }
   }
 
-  // 상태 → 스프라이트 프레임 (런 6프레임 사이클, jump/fall/slide/hurt)
-  private currentSprite(now: number): HTMLImageElement | null {
-    if (this.isInvuln(now)) return sprite("gb_hurt");
-    if (this.sliding) return sprite("gb_slide");
-    if (!this.onGround) return sprite(this.vy < 0 ? "gb_jump" : "gb_fall");
-    const RUN = ["gb_run1", "gb_run2", "gb_run3", "gb_run4", "gb_run5", "gb_run6"] as const;
-    return sprite(RUN[Math.floor(this.runFrame) % RUN.length]);
+  // 상태 → 매니페스트 클립 프레임 파일명
+  private currentFrame(now: number): string | null {
+    if (this.isInvuln(now)) return "hurt.png";
+    if (this.sliding) return "slide.png";
+    if (!this.onGround) {
+      if (this.vy < 0) {
+        // 점프 클립(crouch→jump→apex, 14fps, once)
+        return clipFrame("gimbanjang", "jump", now - this.jumpStartAt);
+      }
+      return clipFrame("gimbanjang", "fall", 0);
+    }
+    // 런 클립: runFrame(속도 스케일 반영 누적)을 프레임 인덱스로
+    const clip = clipFrame("gimbanjang", "run", (this.runFrame / 12) * 1000);
+    return clip;
   }
 
   draw(ctx: CanvasRenderingContext2D, now: number) {
@@ -120,28 +132,28 @@ export class Player {
     ctx.save();
     ctx.globalAlpha = blink ? 0.35 : 1;
 
-    // WP4: 스프라이트 렌더(히트박스는 유지, 그림만 얹음). 미로드 시 벡터 폴백.
-    const img = this.currentSprite(now);
-    if (img) {
-      // 발끝을 지면에 정렬, 히트박스보다 약간 크게(시각 보정).
-      // 슬라이드는 와이드 포즈라 낮은 히트박스 높이에 맞춰 별도 스케일.
-      const dh = this.sliding ? this.slideH * 1.55 : PLAYER.H * 1.12;
-      const dw = dh * (img.width / img.height);
-      const cx = this.x + PLAYER.W / 2 + (this.sliding ? 12 : 0);
-      const bottom = this.sliding ? GROUND_Y : this.y + PLAYER.H;
+    // 매니페스트 클립 렌더 — 실측 키 기준 통일 스케일, 발바닥 지면 정렬.
+    const frame = this.currentFrame(now);
+    if (frame) {
+      const footX = this.x + PLAYER.W / 2;
+      const footY = this.sliding ? this.floorY : this.y + PLAYER.H;
       if (this.sliding) {
         // 슬라이드 흙먼지
         ctx.fillStyle = "rgba(200,180,150,0.55)";
         for (let i = 0; i < 3; i++) {
           const px = this.x - 6 - i * 7 + Math.sin(now / 60 + i) * 2;
           ctx.beginPath();
-          ctx.arc(px, GROUND_Y - 3, 3 + i, 0, Math.PI * 2);
+          ctx.arc(px, this.floorY - 3, 3 + i, 0, Math.PI * 2);
           ctx.fill();
         }
       }
-      ctx.drawImage(img, cx - dw / 2, bottom - dh, dw, dh);
-      ctx.restore();
-      return;
+      // 슬라이드는 와이드 포즈 → 낮은 히트박스에 맞춘 높이로
+      const hOverride = this.sliding ? this.slideH * 1.35 : undefined;
+      const drawn = drawChar(ctx, "gimbanjang", frame, footX, footY, hOverride);
+      if (drawn) {
+        ctx.restore();
+        return;
+      }
     }
 
     if (this.sliding) {
@@ -194,7 +206,7 @@ export class Player {
   private drawSliding(ctx: CanvasRenderingContext2D, now: number) {
     const w = PLAYER.W;
     const sh = this.slideH;
-    const topY = GROUND_Y - sh;
+    const topY = this.floorY - sh;
     const x = this.x;
 
     // 흙먼지
@@ -202,7 +214,7 @@ export class Player {
     for (let i = 0; i < 3; i++) {
       const px = x - 6 - i * 7 + Math.sin(now / 60 + i) * 2;
       ctx.beginPath();
-      ctx.arc(px, GROUND_Y - 3, 3 + i, 0, Math.PI * 2);
+      ctx.arc(px, this.floorY - 3, 3 + i, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -212,7 +224,7 @@ export class Player {
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(x + 6, topY + sh - 4);
-    ctx.lineTo(x - 8, GROUND_Y - 2);
+    ctx.lineTo(x - 8, this.floorY - 2);
     ctx.stroke();
 
     // 몸통(앞으로 기운 낮은 조끼)
