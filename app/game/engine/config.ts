@@ -10,8 +10,12 @@ export const GROUND_Y = VIEW.H - VIEW.GROUND_H; // 캐릭터가 서는 지면의
 
 export const PHYSICS = {
   GRAVITY: 2400, // px/s^2
-  JUMP_V: 820, // 1단 점프 초기 상승 속도
-  DOUBLE_JUMP_V: 720, // 2단 점프 초기 상승 속도
+  // E3.6-1: 점프 상한 재조정 — 60fps 오일러 실측 기준 1단 ≈130px, 정점 2단 누적 ≈213px(HUD 아래).
+  // (해석값보다 이산 적분이 ~7px 낮게 나와 실측 기준으로 보정)
+  // 회피 검증: stack(68)·airbar(slot2=81 중심)·하단 투척(≤40+18) 모두 1단(130)으로 회피 가능.
+  JUMP_V: 810, // 1단 점프 초기 상승 속도
+  DOUBLE_JUMP_V: 650, // 2단 점프 초기 상승 속도
+  FALL_GRAVITY_MULT: 1.3, // 하강 중력 배율 — 낙하 가속(붕 뜨는 느낌 제거)
   MAX_FALL: 1600,
 } as const;
 
@@ -24,7 +28,9 @@ export const SPEED = {
 } as const;
 
 export const PLAYER = {
-  X: 168, // 발중심 ≈ 화면 폭 24% — 러닝 레인 왼쪽
+  // E3.5: 추격 시각화 — 박소장(gap 200~280)이 왼쪽 화면 안에 보이도록 우측 배치.
+  // 시야 감소분은 WARNING_MS·스폰 간격으로 보정.
+  X: 300,
   W: 52, // 화면 키 126px 캐릭터에 맞춘 히트박스(시각 대비 살짝 관대)
   H: 96,
   MAX_HP: 3,
@@ -32,18 +38,25 @@ export const PLAYER = {
 } as const;
 
 export const SPAWN = {
-  OBSTACLE_MIN_MS: 900,
-  OBSTACLE_MAX_MS: 1700,
+  // E3.5: 전방 시야 감소(−132px) 보정 — 스폰 간격 확대
+  OBSTACLE_MIN_MS: 1100,
+  OBSTACLE_MAX_MS: 2000,
   COIN_MIN_MS: 700,
   COIN_MAX_MS: 1500,
+  // E3.7-8: 절차 스폰 코인 최대 높이(px, 지면 기준 중심) — 1단 점프 도달권(머리 ~226px) 내
+  COIN_MAX_H: 160,
   ITEM_MIN_MS: 9000, // 특수 아이템 등장 주기
   ITEM_MAX_MS: 16000,
 } as const;
 
 // 3단계: 박소장 투척 밸런스
 export const PROJECTILE = {
-  WARNING_MS: 1600, // 경고 마크 선행 표시(1~2초 규격). 반응 창이 넉넉해야 공정.
-  SPEED: 470, // 낮출수록 회피 여유. (기존 520)
+  WARNING_MS: 2000, // 경고 표시 상한(REACT_MS 역산이 우선 — 아래 참조)
+  // E3.5-10: 반응 창 보장 — "경고 시작 → 명중"이 항상 REACT_MS 이상이 되도록
+  // 경고 시간을 비행 시간에서 역산(warn = max(MIN_WARN, REACT_MS - flight)).
+  REACT_MS: 2000,
+  MIN_WARN_MS: 700, // 경고 최소 노출
+  SPEED: 280, // 플레이어 기준 상대 접근 속도(px/s) — 투척 후 명중까지 0.7초 이상
   GRACE_MS: 4000, // 시작 직후 이 시간 동안은 투척 없음(온보딩)
   GAP_EARLY_MS: 6500, // 초반 평균 투척 간격
   GAP_LATE_MS: 3200, // 후반(램프 최대) 평균 투척 간격
@@ -68,12 +81,23 @@ export const SLIDE = {
 // 5.3 박소장 추격 시스템. gap(px) 0이면 붙잡힘(게임오버).
 // 튜닝: 상한을 낮춰 박소장이 항상 화면 안쪽에 붙어 있고, 피격 시 크게 좁혀진다.
 export const CHASE = {
-  START_GAP: 170, // 시작 추격 거리
-  MAX_GAP: 210, // 회복 상한 — 낮춰서 게이지 만땅·화면 밖 이탈 방지
+  // E3.5: PLAYER.X(300)와 함께 재조정 — 안전=화면 왼쪽 멀찍이(발중심 326-280=46),
+  // gap이 줄수록 실제로 다가오는 게 보임(클램프는 극단에서만).
+  START_GAP: 200, // 시작 추격 거리
+  MAX_GAP: 280, // 회복 상한
   RECOVER_PER_SEC: 18, // 안 맞고 달릴 때 초당 회복
   HIT_LOSS: 110, // 피격 시 크게 감소 → 즉각적 위협
   SLOW_RECOVER_FACTOR: 0.5, // 감속 중 회복 배율(상대 접근 체감)
   BOOST_RECOVER_FACTOR: 2, // 부스터 중 회복 가속
+} as const;
+
+// E3 안전교육(edu) 관용 룰 — 실패 없이 완주 유도
+export const EDU = {
+  MIN_GAP: 14, // gap 실패 비활성: 잡히기 직전에서 클램프(압박 체험만)
+  THROW_FROM: 0.49, // 투척은 구간4(진행도, col 161/330)부터
+  SLOW_FACTOR: 0.7, // 신규 요소 직전 일시 감속 배율
+  SLOW_MS: 2000, // 감속 지속
+  BANNER_MS: 2000, // 구간 안내 배너 표시 시간
 } as const;
 
 // WP6 노선(스테이지) 진행

@@ -1,98 +1,28 @@
 {
   "gimbanjang": {
-    "canvas": {
-      "w": 405,
-      "h": 728
-    },
-    "anchor": {
-      "x": 202,
-      "baseline": "bottom"
-    },
+    "canvas": { "w": 561, "h": 732 },
+    "anchor": { "x": 280, "baseline": "bottom" },
     "clips": {
       "run": {
-        "frames": [
-          "run1.png",
-          "run2.png",
-          "run3.png",
-          "run4.png",
-          "run5.png",
-          "run6.png",
-          "run7.png",
-          "run8.png"
-        ],
+        "frames": ["run1.png", "run2.png", "run3.png", "run4.png", "run5.png", "run6.png", "run7.png"],
         "fps": 12,
         "loop": true
       },
-      "jump": {
-        "frames": [
-          "crouch.png",
-          "jump.png",
-          "apex.png"
-        ],
-        "fps": 14,
-        "loop": false
-      },
-      "fall": {
-        "frames": [
-          "fall.png"
-        ],
-        "fps": 1,
-        "loop": false
-      }
+      "jump": { "frames": ["jump.png"], "fps": 14, "loop": false },
+      "fall": { "frames": ["fall.png"], "fps": 1, "loop": false }
     }
   },
   "parksojang": {
-    "canvas": {
-      "w": 598,
-      "h": 651
-    },
-    "anchor": {
-      "x": 291,
-      "baseline": "bottom"
-    },
+    "canvas": { "w": 416, "h": 720 },
+    "anchor": { "x": 208, "baseline": "bottom" },
     "clips": {
       "run": {
-        "frames": [
-          "run1.png",
-          "run2.png",
-          "run3.png",
-          "run4.png",
-          "run5.png",
-          "run6.png"
-        ],
+        "frames": ["run1.png", "run2.png", "run3.png", "run4.png", "run5.png", "run6.png"],
         "fps": 12,
         "loop": true
       },
-      "throw": {
-        "frames": [
-          "throw1.png",
-          "throw2.png",
-          "throw3.png"
-        ],
-        "fps": 12,
-        "loop": false
-      },
-      "idle": {
-        "frames": [
-          "idle.png"
-        ],
-        "fps": 1,
-        "loop": true
-      },
-      "taunt": {
-        "frames": [
-          "whistle.png"
-        ],
-        "fps": 1,
-        "loop": false
-      },
-      "hurt": {
-        "frames": [
-          "hurt.png"
-        ],
-        "fps": 1,
-        "loop": false
-      }
+      "throw": { "frames": ["throw1.png", "throw2.png", "throw3.png"], "fps": 12, "loop": false },
+      "idle": { "frames": ["idle.png"], "fps": 1, "loop": true }
     }
   }
 }

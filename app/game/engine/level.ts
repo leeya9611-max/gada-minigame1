@@ -21,26 +21,37 @@ export interface LevelObject {
   type: LevelObjectType;
 }
 
+// E3: 구간 안내 마커 — 통과 시 상단 배너(2초) + 신규 요소 직전 일시 감속
+export interface LevelMarker {
+  col: number;
+  text: string;
+}
+
 export interface LevelData {
   id: string;
   name: string;
-  index: number; // 1~5, 난이도 스케일
+  index: number; // 1~5, 난이도 스케일 (안전교육은 0)
   cols: number;
   cellSize: number;
   baseSpeed: number;
   speedRamp: number; // 초당 가속(px/s²에 준하는 에디터 값)
   terrain: TerrainCell[];
   objects: LevelObject[];
+  markers?: LevelMarker[];
 }
 
 export const ROUTE_IDS = ["route1", "route2", "route3", "route4", "route5"] as const;
 export type RouteId = (typeof ROUTE_IDS)[number];
 
+// E3: 안전교육 전용 노선
+export const EDU_ROUTE_ID = "route_edu" as const;
+export type LevelId = RouteId | typeof EDU_ROUTE_ID;
+
 export const STEP_PX = 30; // 지형 1단 높이(에디터 HSLOT)
 export const SLOT_PX = 30; // air 슬롯 간격
 export const SLOT_BASE = 21; // HSLOT*0.7 — slot 오프셋 기저
 
-export async function loadLevel(id: RouteId): Promise<LevelData> {
+export async function loadLevel(id: LevelId): Promise<LevelData> {
   const res = await fetch(`/levels/${id}.json`);
   if (!res.ok) throw new Error(`level load failed: ${id}`);
   return (await res.json()) as LevelData;

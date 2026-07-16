@@ -5,7 +5,7 @@ import { GameEngine } from "./engine/GameEngine";
 import { loadSprites } from "./engine/sprites";
 import type { MapKey } from "./engine/Background";
 import { CHASE, ROUTES, VIEW } from "./engine/config";
-import { loadLevel, type LevelData, type RouteId } from "./engine/level";
+import { EDU_ROUTE_ID, loadLevel, type LevelData, type RouteId } from "./engine/level";
 import type { GameMode, GameResult, HudState } from "./engine/types";
 import { parseToken } from "@/lib/auth";
 import { requestNativeAction, sendResultToNative } from "@/lib/api";
@@ -37,6 +37,7 @@ const POINT_RATE = 0.1;
 
 const INITIAL_HUD: HudState = {
   phase: "ready",
+  mode: "route",
   coins: 0,
   score: 0,
   hp: 3,
@@ -47,6 +48,7 @@ const INITIAL_HUD: HudState = {
   chaseRatio: CHASE.START_GAP / CHASE.MAX_GAP,
   progress: 0,
   finale: false,
+  banner: null,
   dialogue: null,
 };
 
@@ -224,13 +226,13 @@ export default function Game({ token }: { token?: string }) {
     window.setTimeout(() => setFlash(false), 450);
   }, [spritesLoaded, showCharge, eduDone, consumeTicket]);
 
-  // E2: 안전교육 — 티켓 미차감, 언제든 재입장. route1 재생(E3에서 route_edu로 교체).
+  // E2/E3: 안전교육 — 티켓 미차감, 언제든 재입장. 전용 노선 route_edu 재생.
   const startEdu = useCallback(async () => {
     const eng = engineRef.current;
     if (!eng || !spritesLoaded || showCharge) return;
     playSfx("button_click");
     try {
-      const routeId: RouteId = "route1";
+      const routeId = EDU_ROUTE_ID;
       let level = levelCache.current.get(routeId);
       if (!level) {
         level = await loadLevel(routeId);
@@ -396,8 +398,9 @@ export default function Game({ token }: { token?: string }) {
         {screen === "game" && hud.phase === "playing" && (
           <>
             <TopHud hud={hud} />
-            <ChaseGauge hud={hud} />
+            {/* E3.5-8: 추격 게이지 제거 — 위험 신호는 박소장 실거리 + 가장자리 비네트가 담당 */}
             <ProgressBar hud={hud} />
+            {hud.banner && <SectionBanner text={hud.banner} />}
             {hud.dialogue && <DialogueBubble text={hud.dialogue} />}
             <ControlHints />
           </>
@@ -918,6 +921,24 @@ function LobbyScreen({
           <div style={{ fontSize: 13, color: "#9fc4e8" }}>조작 연습 · 무료</div>
         </button>
 
+        {/* 로비 대기 연출: 서류 든 김반장 (AI 시트 mixed) */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/assets/sprites/gimbanjang_custom/idle_docs.png"
+          alt=""
+          aria-hidden
+          draggable={false}
+          style={{
+            position: "absolute",
+            left: 16,
+            bottom: 10,
+            height: 118,
+            width: "auto",
+            pointerEvents: "none",
+            filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.45))",
+          }}
+        />
+
         {/* 무한 잔업 모드 — 이수 전 잠금 */}
         <button
           onClick={onStartEndless}
@@ -966,8 +987,9 @@ function TopHud({ hud }: { hud: HudState }) {
         pointerEvents: "none",
       }}
     >
+      {/* E3.7-6: HUD 가독성 — 반투명 다크 패널로 배경과 분리 */}
       <div>
-        <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+        <div style={{ ...hudPanel, display: "flex", gap: 4, marginBottom: 6 }}>
           {[0, 1, 2].map((i) => (
             <span
               key={i}
@@ -983,7 +1005,7 @@ function TopHud({ hud }: { hud: HudState }) {
           {hud.slowActive && <Badge color="#e63946">🐢 피격 감속</Badge>}
         </div>
       </div>
-      <div style={{ textAlign: "right", textShadow: "0 1px 3px rgba(0,0,0,.4)" }}>
+      <div style={{ ...hudPanel, textAlign: "right", textShadow: "0 1px 3px rgba(0,0,0,.4)" }}>
         <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1 }}>
           {hud.score.toLocaleString()}
         </div>
@@ -1010,11 +1032,13 @@ function Badge({ color, children }: { color: string; children: React.ReactNode }
   );
 }
 
-// 컴팩트 추격 게이지(좌상단)
+// 컴팩트 추격 게이지(좌상단) — E3.5-8에서 HUD 단순화로 미사용 보관(렌더 제거)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ChaseGauge({ hud }: { hud: HudState }) {
   const r = hud.chaseRatio;
   const color = r > 0.55 ? "#37c871" : r > 0.3 ? "#ff9500" : "#e63946";
-  const danger = r <= 0.3;
+  // E3.5: 안전교육에선 위기 연출(펄스·"위험!") 끔 — 게이지는 정보로만
+  const danger = r <= 0.3 && hud.mode !== "edu";
   return (
     <div
       style={{
@@ -1068,6 +1092,7 @@ function ProgressBar({ hud }: { hud: HudState }) {
   return (
     <div
       style={{
+        ...hudPanel, // E3.7-6: 배경과 무관하게 읽히는 다크 패널
         position: "absolute",
         top: 12,
         left: "50%",
@@ -1087,20 +1112,56 @@ function ProgressBar({ hud }: { hud: HudState }) {
           borderRadius: 999,
           background: "rgba(0,0,0,0.35)",
           overflow: "hidden",
-          animation: hud.finale ? "chasePulse 0.5s ease-in-out infinite" : "none",
         }}
       >
         <div
           style={{
             height: "100%",
             width: `${Math.round(hud.progress * 100)}%`,
-            background: hud.finale ? "#e63946" : "#ffd23f",
+            background: "#ffd23f", // E3.5: 노랑 고정(빨강 금지)
             borderRadius: 999,
             transition: "width 0.15s linear",
           }}
         />
       </div>
-      <span style={{ fontSize: 14 }}>🚌</span>
+      {/* 피날레: 바 색 대신 정류장 아이콘 깜빡임으로 표현 */}
+      <span
+        style={{
+          fontSize: hud.finale ? 17 : 14,
+          animation: hud.finale ? "chasePulse 0.45s ease-in-out infinite" : "none",
+        }}
+      >
+        🚌
+      </span>
+    </div>
+  );
+}
+
+// E3: 안전교육 구간 안내 배너 — 상단 중앙, 팝인 후 2초
+function SectionBanner({ text }: { text: string }) {
+  return (
+    <div
+      key={text}
+      style={{
+        position: "absolute",
+        top: "13%",
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: "linear-gradient(180deg, #ffd23f, #ffb800)",
+        color: "#1f2a44",
+        padding: "10px 26px",
+        borderRadius: 999,
+        fontSize: 19,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+        boxShadow: "0 6px 22px rgba(0,0,0,.35)",
+        pointerEvents: "none",
+        animation: "bannerPop 0.4s cubic-bezier(.34,1.56,.64,1) both",
+        zIndex: 5,
+      }}
+    >
+      {text}
+      <style>{`@keyframes bannerPop{0%{transform:translateX(-50%) scale(0.7);opacity:0}100%{transform:translateX(-50%) scale(1);opacity:1}}`}</style>
     </div>
   );
 }
@@ -1148,6 +1209,21 @@ function ClearOverlay({
 }) {
   return (
     <div style={overlayStyle} onPointerDown={(e) => e.stopPropagation()}>
+      {/* 완주 성공 연출: 환호하는 김반장 (AI 시트 mixed cheer) */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/assets/sprites/gimbanjang_custom/cheer.png"
+        alt=""
+        aria-hidden
+        draggable={false}
+        style={{
+          height: 96,
+          width: "auto",
+          marginBottom: 6,
+          animation: "starPop 0.5s cubic-bezier(.34,1.56,.64,1) both",
+          filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))",
+        }}
+      />
       <div style={{ fontSize: 28, fontWeight: 800, color: "#ffd23f" }}>🦺 안전교육 이수!</div>
       <div
         style={{
@@ -1175,14 +1251,14 @@ function ClearOverlay({
           </div>
         </div>
         <div style={resultCard}>
-          <div style={resultLabel}>피격</div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: result.hits === 0 ? "#8ee6d0" : "#ffd23f" }}>
-            {result.hits === 0 ? "무피격!" : `${result.hits}회`}
+          <div style={resultLabel}>조작 이수</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#8ee6d0", lineHeight: 1.5 }}>
+            점프 ✓<br />슬라이드 ✓<br />회피 ✓
           </div>
         </div>
       </div>
       <div style={{ fontSize: 12, color: "#8fa3c4", marginBottom: 14 }}>
-        이제 진짜 잔업이 시작됩니다 — 랭킹전에서 최대한 오래 버티세요! · 🎟 {tickets}
+        점프·슬라이드·회피 — 3가지 조작 이수! 이제 랭킹전에서 오래 버텨보세요 · 🎟 {tickets}
       </div>
 
       <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 500 }}>
@@ -1337,6 +1413,13 @@ function RotateHint() {
     </div>
   );
 }
+
+// E3.7-6: HUD 클러스터 공용 반투명 다크 패널
+const hudPanel: React.CSSProperties = {
+  background: "rgba(0,0,0,0.35)",
+  borderRadius: 12,
+  padding: "5px 10px",
+};
 
 const overlayStyle: React.CSSProperties = {
   position: "absolute",

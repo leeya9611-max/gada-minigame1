@@ -21,22 +21,23 @@ interface CharMeta {
 }
 
 // realH/footY는 run1.png 알파 bbox 실측값 (캔버스 높이로 그리면 안 됨 — 캐릭터별 여백이 달라 크기 틀어짐)
+// 2026-07: AI 생성 시트(incoming_ai) 분할본 — 발바닥 기준선 정렬(footY=캔버스 하단 여백 10px)
 export const CHARS: Record<CharKey, CharMeta> = {
   gimbanjang: {
     dir: `${BASE}/gimbanjang_custom`,
     canvasW: manifest.gimbanjang.canvas.w,
     canvasH: manifest.gimbanjang.canvas.h,
     anchorX: manifest.gimbanjang.anchor.x,
-    footY: 710,
-    realH: 514,
+    footY: 722,
+    realH: 520,
   },
   parksojang: {
     dir: `${BASE}/parksojang_custom`,
     canvasW: manifest.parksojang.canvas.w,
     canvasH: manifest.parksojang.canvas.h,
     anchorX: manifest.parksojang.anchor.x,
-    footY: 633,
-    realH: 532,
+    footY: 710,
+    realH: 453,
   },
 };
 
@@ -74,14 +75,28 @@ export function isRawFrame(who: CharKey, file: string): boolean {
   return who === "gimbanjang" && RAW_FRAMES.has(file);
 }
 
-// ── 소품/장애물 (Kenney CC0) ──
+// ── 소품/장애물 ──
+// 2026-07: AI 생성 에셋(incoming_ai) 반입 — 코인·장애물·투척물·소품.
+// booster/cement/crate/hazard/post는 Kenney CC0 잔존분(airbar·폴백에서 계속 사용).
 export const SPRITE_PATHS = {
-  coin: `${BASE}/items/coin_gold.png`,
+  coin: `${BASE}/items/coin_helmet.png`,
   booster: `${BASE}/items/booster_star.png`,
   cement: `${BASE}/obstacles/cement.png`,
   crate: `${BASE}/obstacles/crate.png`,
   hazard: `${BASE}/obstacles/hazard.png`,
   post: `${BASE}/obstacles/post.png`,
+  puddle: `${BASE}/obstacles/puddle.png`,
+  stack: `${BASE}/obstacles/stack.png`,
+  lowbar: `${BASE}/obstacles/lowbar.png`,
+  fall_pipes: `${BASE}/obstacles/fall_pipes.png`,
+  barrier: `${BASE}/obstacles/barrier.png`, // 지면 장애물 다양화용 예비(미사용)
+  papers: `${BASE}/projectiles/papers.png`,
+  tube: `${BASE}/projectiles/tube.png`,
+  megaphone: `${BASE}/projectiles/megaphone.png`,
+  cone: `${BASE}/props/cone.png`,
+  sign_safety: `${BASE}/props/sign_safety.png`,
+  fence_panel: `${BASE}/props/fence_panel.png`,
+  busstop: `${BASE}/props/busstop.png`,
 } as const;
 
 export type SpriteKey = keyof typeof SPRITE_PATHS;

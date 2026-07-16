@@ -2,6 +2,7 @@ import {
   CHASE,
   DIALOGUE,
   DIALOGUE_MS,
+  EDU,
   GROUND_Y,
   ITEM_EFFECT,
   PLAYER,
@@ -13,7 +14,7 @@ import {
 } from "./config";
 import { Background, type MapKey } from "./Background";
 import { intersects, intersectsPadded } from "./collision";
-import { CHARS, TARGET_CHAR_H, charScale, clipFrame, drawChar } from "./sprites";
+import { CHARS, TARGET_CHAR_H, charScale, clipFrame, drawChar, sprite } from "./sprites";
 import { Coin, FallingObject, Item, Obstacle, Projectile } from "./obstacle";
 import {
   SLOT_BASE,
@@ -105,6 +106,13 @@ export class GameEngine {
   private dialogueUntil = 0;
   private lastDialogue = ""; // 연속 중복 방지
 
+  // E3 안전교육: 구간 안내 마커
+  private markerIdx = 0;
+  private eduThrowSeq = 0; // 교육 투척 확정 순서: 하단 → 상단 교대(E3.5-9)
+  private banner: string | null = null;
+  private bannerUntil = 0;
+  private eduSlowUntil = 0; // 신규 요소 직전 일시 감속(0.7배)
+
   private userId: string;
 
   constructor(
@@ -156,6 +164,11 @@ export class GameEngine {
     this.gap = CHASE.START_GAP;
     this.dialogue = null;
     this.dialogueUntil = 0;
+    this.markerIdx = 0;
+    this.eduThrowSeq = 0;
+    this.banner = null;
+    this.bannerUntil = 0;
+    this.eduSlowUntil = 0;
   }
 
   // WP6: 노선 데이터 로드(맵 배경 포함). ready 상태에서 호출.
@@ -194,6 +207,13 @@ export class GameEngine {
   private get progress(): number {
     if (!this.lengthPx) return 0;
     return Math.max(0, Math.min(1, this.playerWorldX / this.lengthPx));
+  }
+
+  // 박소장 발중심 화면 x — 플레이어 뒤 gap 거리, 왼쪽 가장자리 안쪽 클램프
+  private get bossFootX(): number {
+    const s = charScale("parksojang");
+    const halfW = (CHARS.parksojang.canvasW * s) / 2;
+    return Math.max(halfW * 0.55, PLAYER.X + PLAYER.W / 2 - this.gap);
   }
 
   // 화면 x 위치의 지면 y (노선 지형 반영). gap(구멍)이면 화면 아래.
@@ -271,7 +291,8 @@ export class GameEngine {
     const slowed = now < this.slowUntil;
     const base = this.level?.baseSpeed ?? SPEED.BASE;
     const ramp = this.level?.speedRamp ?? SPEED.ACCEL;
-    const target = Math.min(SPEED.MAX, base + this.elapsed * ramp);
+    let target = Math.min(SPEED.MAX, base + this.elapsed * ramp);
+    if (now < this.eduSlowUntil) target *= EDU.SLOW_FACTOR; // E3: 신규 요소 안내 감속
     this.worldSpeed = slowed ? target * SPEED.SLOW_FACTOR : target;
 
     const scale = this.worldSpeed / SPEED.BASE;
@@ -327,6 +348,22 @@ export class GameEngine {
     this.fallers = this.fallers.filter((f) => !f.dead);
 
     if (this.dialogue && now > this.dialogueUntil) this.dialogue = null;
+    if (this.banner && now > this.bannerUntil) this.banner = null;
+
+    // E3: 구간 안내 마커 — 통과 시 배너 2초 + (교육) 일시 감속 1회
+    const markers = this.level?.markers;
+    if (markers && this.markerIdx < markers.length) {
+      const m = markers[this.markerIdx];
+      if (this.playerWorldX >= m.col * (this.level?.cellSize ?? 54)) {
+        this.banner = m.text;
+        this.bannerUntil = now + EDU.BANNER_MS;
+        if (this.mode === "edu") this.eduSlowUntil = now + EDU.SLOW_MS;
+        this.markerIdx++;
+      }
+    }
+
+    // E3: 교육 모드는 gap 실패 비활성 — 잡히기 직전에서 클램프(압박만 체험)
+    if (this.mode === "edu") this.gap = Math.max(this.gap, EDU.MIN_GAP);
 
     // 완주: 정류장(노선 끝) 도착 = 퇴근 성공
     if (this.level && this.playerWorldX >= this.lengthPx - 10) {
@@ -346,7 +383,10 @@ export class GameEngine {
 
   // 구멍에 빠짐: HP·gap 페널티 후 지면으로 구조(러너 관례)
   private rescueFromPit(now: number) {
+    // E3: 교육 모드는 낙하도 HP 미감소(연출·페널티는 유지) — 실패 없이 완주
+    const hpBefore = this.player.hp;
     this.player.hit(now);
+    if (this.mode === "edu") this.player.hp = hpBefore;
     this.hits++;
     this.gap -= CHASE.HIT_LOSS;
     this.slowUntil = now + SPEED.SLOW_MS;
@@ -397,8 +437,10 @@ export class GameEngine {
 
     this.tCoin -= dtMs;
     if (this.tCoin <= 0) {
-      // 점프 궤적 높이에 배치(지면~점프 정점 사이)
-      const y = GROUND_Y - rand(24, 160);
+      // 점프 궤적 높이에 배치(지면~점프 정점 사이).
+      // E3.7-8 도달성: E3.6 물리(1단 발 130px·머리 ~226px) 기준 상한 160px — 1단 점프로 전부 획득 가능.
+      // route_edu.json 최고 코인은 slot3(중심 111px)로 동일 상한 내(레벨 수정 불필요, 검증 완료).
+      const y = GROUND_Y - rand(24, SPAWN.COIN_MAX_H);
       const streak = Math.floor(rand(1, 4));
       for (let i = 0; i < streak; i++) {
         const c = new Coin(y);
@@ -482,13 +524,20 @@ export class GameEngine {
 
   // 박소장 투척 (경고 선행). 노선 index가 높을수록 간격이 짧아짐.
   private spawnThrows(dtMs: number, now: number) {
+    // E3: 안전교육은 투척 학습 구간(진행도 THROW_FROM)부터만
+    if (this.mode === "edu" && this.progress < EDU.THROW_FROM) return;
     this.tProjectile -= dtMs;
     if (this.tProjectile > 0) return;
-    // 하단(점프로 회피) 위주, 가끔 상단(슬라이드 회피)로 리듬 변화
-    const high = Math.random() < PROJECTILE.HIGH_CHANCE;
+    // 하단(점프로 회피) 위주, 가끔 상단(슬라이드 회피)로 리듬 변화.
+    // E3.5-9: 교육은 확정 순서 — 하단(점프) → 상단(슬라이드) 교대로 상·하 1회씩 보장.
+    const high =
+      this.mode === "edu"
+        ? this.eduThrowSeq++ % 2 === 1
+        : Math.random() < PROJECTILE.HIGH_CHANCE;
     // 상단 투척은 점프를 강제하는 장애물과 겹치면 회피 불가 → 임박 시에만 보류.
     if (high && this.obstacleAhead()) {
       this.tProjectile = PROJECTILE.RETRY_MS;
+      if (this.mode === "edu") this.eduThrowSeq--; // 보류 시 확정 순서 유지
       return;
     }
     const kind: ProjectileKind = pick(["papers", "tube", "megaphone"]);
@@ -498,7 +547,10 @@ export class GameEngine {
     const baseY = this.groundYAt(PLAYER.X + PLAYER.W / 2);
     const y = (baseY > VIEW.H ? GROUND_Y : baseY) - off;
     this.projectiles.push(new Projectile(kind, y, now, high));
-    this.say(this.pickLine(DIALOGUE.throw), now);
+    // E3.5-4: 교육 톤 완화 — 박소장 잔소리는 둘에 하나만(혼나는 경험 방지)
+    if (this.mode !== "edu" || this.eduThrowSeq % 2 === 1) {
+      this.say(this.pickLine(DIALOGUE.throw), now);
+    }
     const idxScale = 1 / (1 + ((this.level?.index ?? 1) - 1) * ROUTE.INDEX_SPEED_STEP);
     this.tProjectile = this.nextThrowDelay() * idxScale;
   }
@@ -528,8 +580,11 @@ export class GameEngine {
     const invincible = now < this.boosterUntil;
 
     // 공통 피격 처리: HP−1 + 감속 + gap 감소 + hits(별점 무피격 판정)
+    // E3: 교육 모드는 HP 미감소(피격 연출·감속·추격 압박은 유지) → 실패 없이 학습
     const applyHit = (): boolean => {
+      const hpBefore = this.player.hp;
       if (invincible || !this.player.hit(now)) return false;
+      if (this.mode === "edu") this.player.hp = hpBefore;
       this.hits++;
       this.slowUntil = now + SPEED.SLOW_MS;
       this.gap -= CHASE.HIT_LOSS; // 피격 시 박소장이 확 접근
@@ -652,6 +707,7 @@ export class GameEngine {
     const now = performance.now();
     this.cb.onHud({
       phase: this.phase,
+      mode: this.mode,
       coins: this.score.coins,
       score: this.score.rankScore,
       hp: this.player.hp,
@@ -662,6 +718,7 @@ export class GameEngine {
       chaseRatio: Math.max(0, Math.min(1, this.gap / CHASE.MAX_GAP)),
       progress: this.progress,
       finale: this.finaleOn,
+      banner: this.banner,
       dialogue: this.dialogue,
     });
   }
@@ -678,6 +735,7 @@ export class GameEngine {
       if (!this.level) this.drawGround(ctx);
     }
     if (this.level) this.drawTerrain(ctx);
+    this.drawProps(ctx); // 트랙사이드 소품(펜스·콘·안전표지) — 게임플레이 뒤 레이어
     this.drawStation(ctx, now); // 정류장(노선 끝)
     this.drawBoss(ctx, now); // 플레이어 뒤에서 추격하는 박소장
 
@@ -701,6 +759,8 @@ export class GameEngine {
 
     this.player.draw(ctx, now);
     for (const p of this.projectiles) p.draw(ctx, now);
+
+    this.drawDangerVignette(ctx, now); // E3.5: 위기 비네트(가장자리)
   }
 
   // 노선 지형 렌더: 프로파일 폴리곤(흙) + 표면 스트립. 에디터와 동일 규칙.
@@ -736,25 +796,77 @@ export class GameEngine {
       }
     }
     if (started) ctx.lineTo(ec * cell - this.bgScroll, VIEW.H);
-    ctx.fillStyle = "#a9835a";
+    ctx.fillStyle = "#a1714a" /* ground_strip 흙색 실측 */;
     ctx.fill();
 
-    // 표면 스트립(배경 바닥 이미지를 칸별로 얹음)
+    // E3.5: 노선 끝(정류장) 이후에도 지면을 이어 그림 — 검은 절벽 방지
+    const endX = lv.cols * cell - this.bgScroll;
+    if (endX < VIEW.W) {
+      const lastG = this.profile[lv.cols - 1];
+      const lastY = lastG && !lastG.gap ? GROUND_Y - lastG.h * STEP_PX : GROUND_Y;
+      ctx.fillStyle = "#a1714a" /* ground_strip 흙색 실측 */;
+      ctx.fillRect(endX - 1, lastY, VIEW.W - endX + 2, VIEW.H - lastY);
+    }
+
+    // 표면 스트립 — 텍스처 x를 이미지 폭으로 연속 wrap(색 밴드 이음새 제거, E3.5)
     const g0 = this.bg.groundImage;
-    for (let c = sc; c < ec; c++) {
-      const g = this.profile[Math.min(lv.cols - 1, c)];
-      if (!g || g.gap) continue;
-      const x = c * cell - this.bgScroll;
-      const y = GROUND_Y - g.h * STEP_PX;
+    const drawSurface = (worldX: number, x: number, y: number) => {
       if (g0) {
-        const srcX = (c * cell) % Math.max(1, g0.width - cell);
-        ctx.drawImage(g0, srcX, 0, cell, g0.height, x - 1, y - 4, cell + 2, 40);
+        const srcX = ((worldX % g0.width) + g0.width) % g0.width;
+        const remain = g0.width - srcX;
+        if (remain >= cell) {
+          ctx.drawImage(g0, srcX, 0, cell, g0.height, x - 1, y - 4, cell + 2, 40);
+        } else {
+          // 이미지 경계에 걸치면 두 조각으로 이어 그림
+          const w1 = remain;
+          const w2 = cell - remain;
+          const dw1 = (w1 / cell) * (cell + 2);
+          ctx.drawImage(g0, srcX, 0, w1, g0.height, x - 1, y - 4, dw1, 40);
+          ctx.drawImage(g0, 0, 0, w2, g0.height, x - 1 + dw1, y - 4, cell + 2 - dw1, 40);
+        }
       } else {
         ctx.fillStyle = "#8a6a45";
         ctx.fillRect(x - 1, y, cell + 2, 6);
       }
+    };
+    for (let c = sc; c < ec; c++) {
+      const g = this.profile[Math.min(lv.cols - 1, c)];
+      if (!g || g.gap) continue;
+      drawSurface(c * cell, c * cell - this.bgScroll, GROUND_Y - g.h * STEP_PX);
+    }
+    // 노선 끝 이후 표면도 연속
+    if (endX < VIEW.W) {
+      const lastG = this.profile[lv.cols - 1];
+      const lastY = lastG && !lastG.gap ? GROUND_Y - lastG.h * STEP_PX : GROUND_Y;
+      for (let c = lv.cols; c * cell - this.bgScroll < VIEW.W; c++) {
+        drawSurface(c * cell, c * cell - this.bgScroll, lastY);
+      }
     }
     ctx.restore();
+  }
+
+  // 트랙사이드 소품(AI 에셋): 펜스 패널·안전 콘·안전표지를 지면 위에 결정적 배치.
+  // 월드 x 기준 해시 → 종류·간격 변주. 게임플레이 요소보다 뒤에 그려 방해하지 않음.
+  private drawProps(ctx: CanvasRenderingContext2D) {
+    const SPACING = 640; // 평균 간격(px)
+    const first = Math.floor(this.bgScroll / SPACING);
+    for (let i = first; i <= first + Math.ceil(VIEW.W / SPACING) + 1; i++) {
+      const h1 = ((i * 2654435761) >>> 0) % 1000; // 결정적 해시
+      const jitter = (h1 % 320) - 160;
+      const wx = i * SPACING + jitter;
+      const x = wx - this.bgScroll;
+      if (x < -140 || x > VIEW.W + 40) continue;
+      // 정류장 근처(마지막 400px)는 비움
+      if (this.level && wx > this.lengthPx - 400) continue;
+      const gy = this.groundYAt(Math.max(0, Math.min(VIEW.W - 1, x)));
+      if (gy > VIEW.H) continue; // 구멍 위 배치 금지
+      const kind = h1 % 3;
+      const img = sprite(kind === 0 ? "fence_panel" : kind === 1 ? "cone" : "sign_safety");
+      if (!img) continue;
+      const dh = kind === 0 ? 48 : kind === 1 ? 26 : 58;
+      const dw = dh * (img.width / img.height);
+      ctx.drawImage(img, x - dw / 2, gy - dh, dw, dh);
+    }
   }
 
   // 정류장(노선 끝): 도착 = 완주. 쉼터(지붕·유리·벤치·표지판) + 완주 시 버스 정차 연출.
@@ -767,8 +879,29 @@ export class GameEngine {
 
     ctx.save();
 
-    // ── 쉼터 구조물 ──
-    const shW = 128; // 쉼터 폭
+    const shW = 128; // 쉼터 폭(완주 버스 연출 기준점)
+
+    // ── 쉼터: AI 에셋(주황 B안) 우선, 미로드 시 기존 벡터 ──
+    const stopImg = sprite("busstop");
+    if (stopImg) {
+      const dh = 195;
+      const dw = dh * (stopImg.width / stopImg.height);
+      ctx.drawImage(stopImg, sx - dw / 2, baseY - dh + 2, dw, dh);
+      if (this.phase !== "cleared") {
+        // 진행 중: 반짝임(목표 인지)
+        ctx.globalAlpha = 0.5 + Math.sin(now / 200) * 0.3;
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(sx + dw / 2 - 14, baseY - dh + 34, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      this.drawStationBus(ctx, now, sx, baseY, shW);
+      ctx.restore();
+      return;
+    }
+
+    // ── 쉼터 구조물(벡터 폴백) ──
     const shH = 128; // 기둥 높이
     // 뒷벽 유리 패널
     ctx.fillStyle = "rgba(160, 200, 230, 0.35)";
@@ -821,6 +954,27 @@ export class GameEngine {
     ctx.fillText("🚌", signX, baseY - 130);
 
     // ── 완주 연출: 버스 정차 + 헤드라이트 + 문 열림 ──
+    this.drawStationBus(ctx, now, sx, baseY, shW);
+    if (this.phase !== "cleared") {
+      // 진행 중: 표지판 반짝임(목표 인지)
+      ctx.globalAlpha = 0.5 + Math.sin(now / 200) * 0.3;
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(signX + 12, baseY - 148, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // 완주 시 버스 정차 연출 (쉼터 스프라이트/벡터 공용)
+  private drawStationBus(
+    ctx: CanvasRenderingContext2D,
+    now: number,
+    sx: number,
+    baseY: number,
+    shW: number
+  ) {
     if (this.phase === "cleared") {
       const bx = sx + shW / 2 + 40; // 버스 앞머리 x
       const bw = 190;
@@ -863,18 +1017,10 @@ export class GameEngine {
       ctx.globalAlpha = 0.6 + Math.sin(now / 250) * 0.4;
       ctx.fillStyle = "#ffd23f";
       ctx.font = "bold 12px sans-serif";
+      ctx.textAlign = "center";
       ctx.fillText("우리집行", bx - bw / 2, by + 20);
       ctx.globalAlpha = 1;
-    } else {
-      // 진행 중: 표지판 반짝임(목표 인지)
-      ctx.globalAlpha = 0.5 + Math.sin(now / 200) * 0.3;
-      ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.arc(signX + 12, baseY - 148, 3, 0, Math.PI * 2);
-      ctx.fill();
     }
-
-    ctx.restore();
   }
 
   private roundRectPath(
@@ -899,34 +1045,13 @@ export class GameEngine {
   private drawBoss(ctx: CanvasRenderingContext2D, now: number) {
     const ratio = Math.max(0, Math.min(1, this.gap / CHASE.MAX_GAP));
     const danger = 1 - ratio; // 0(안전)~1(위기)
-    const s = charScale("parksojang");
-    const halfW = (CHARS.parksojang.canvasW * s) / 2;
-    // 발 중심 x: 플레이어 발 중심 - gap, 왼쪽 가장자리 안쪽 클램프
-    const footX = Math.max(halfW * 0.55, PLAYER.X + PLAYER.W / 2 - this.gap);
+    const footX = this.bossFootX;
     const shake = danger > 0.5 ? Math.sin(now / 40) * danger * 3 : 0;
-    // 보스 발밑 지형(구멍 위면 기준 지면 유지)
+    // 보스 발밑 지형(구멍 위면 기준 지면 유지). +3px 접지 보정(E3.5: 부유감 제거)
     const rawGy = this.groundYAt(footX);
-    const bossGy = rawGy > VIEW.H ? GROUND_Y : rawGy;
+    const bossGy = (rawGy > VIEW.H ? GROUND_Y : rawGy) + 3;
 
     ctx.save();
-
-    // 위기 경고 오라 (발밑 타원)
-    if (danger > 0.4) {
-      ctx.globalAlpha = 0.18 + Math.sin(now / 100) * 0.12 * danger;
-      ctx.fillStyle = "#ff3b30";
-      ctx.beginPath();
-      ctx.ellipse(
-        footX + shake,
-        bossGy - TARGET_CHAR_H / 2,
-        halfW * 0.9,
-        TARGET_CHAR_H * 0.55,
-        0,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
 
     // 클립: 경고(투척 준비) 중엔 throw(3프레임), 평시 run(6프레임 루프)
     const warning = this.projectiles.find((p) => p.warning);
@@ -943,6 +1068,30 @@ export class GameEngine {
       ctx.fillRect(footX - 20, bossGy - TARGET_CHAR_H * 0.8, 40, TARGET_CHAR_H * 0.8);
     }
 
+    ctx.restore();
+  }
+
+  // E3.5: 위기 연출 — 화면 가장자리 붉은 비네트(gap 비율 기반). 교육 모드에선 끔.
+  private drawDangerVignette(ctx: CanvasRenderingContext2D, now: number) {
+    if (this.mode === "edu" || this.phase !== "playing") return;
+    const ratio = Math.max(0, Math.min(1, this.gap / CHASE.MAX_GAP));
+    const danger = 1 - ratio;
+    if (danger < 0.55) return;
+    const t = (danger - 0.55) / 0.45; // 0~1
+    const alpha = t * (0.28 + Math.sin(now / 160) * 0.08);
+    const g = ctx.createRadialGradient(
+      VIEW.W / 2,
+      VIEW.H / 2,
+      VIEW.H * 0.42,
+      VIEW.W / 2,
+      VIEW.H / 2,
+      VIEW.W * 0.72
+    );
+    g.addColorStop(0, "rgba(255,40,30,0)");
+    g.addColorStop(1, `rgba(255,40,30,${Math.max(0, alpha).toFixed(3)})`);
+    ctx.save();
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, VIEW.W, VIEW.H);
     ctx.restore();
   }
 

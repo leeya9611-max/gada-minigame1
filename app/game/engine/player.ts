@@ -92,7 +92,9 @@ export class Player {
   }
 
   update(dt: number, speedScale: number, now: number) {
-    this.vy += PHYSICS.GRAVITY * dt;
+    // E3.6-1: 하강 시 중력 1.3배 — 상승 높이는 유지하고 체공만 줄임
+    const g = PHYSICS.GRAVITY * (this.vy > 0 ? PHYSICS.FALL_GRAVITY_MULT : 1);
+    this.vy += g * dt;
     if (this.vy > PHYSICS.MAX_FALL) this.vy = PHYSICS.MAX_FALL;
     this.y += this.vy * dt;
 
@@ -138,14 +140,27 @@ export class Player {
       const footX = this.x + PLAYER.W / 2;
       const footY = this.sliding ? this.floorY : this.y + PLAYER.H;
       if (this.sliding) {
-        // 슬라이드 흙먼지
-        ctx.fillStyle = "rgba(200,180,150,0.55)";
-        for (let i = 0; i < 3; i++) {
-          const px = this.x - 6 - i * 7 + Math.sin(now / 60 + i) * 2;
+        // 슬라이드 흙먼지 — 크고 연속적으로, 스피드라인까지(E3.5: "미끄러짐" 명시)
+        ctx.save();
+        ctx.fillStyle = "rgba(210,190,160,0.6)";
+        for (let i = 0; i < 5; i++) {
+          const px = this.x + 2 - i * 11 + Math.sin(now / 50 + i * 1.7) * 3;
+          const py = this.floorY - 4 - (i % 2) * 5;
           ctx.beginPath();
-          ctx.arc(px, this.floorY - 3, 3 + i, 0, Math.PI * 2);
+          ctx.arc(px, py, 4 + i * 1.6, 0, Math.PI * 2);
           ctx.fill();
         }
+        // 스피드 라인
+        ctx.strokeStyle = "rgba(255,255,255,0.4)";
+        ctx.lineWidth = 2.5;
+        for (let i = 0; i < 3; i++) {
+          const ly = this.floorY - 14 - i * 12;
+          ctx.beginPath();
+          ctx.moveTo(this.x - 26 - i * 6, ly);
+          ctx.lineTo(this.x - 54 - i * 6, ly);
+          ctx.stroke();
+        }
+        ctx.restore();
       }
       // 슬라이드는 와이드 포즈 → 낮은 히트박스에 맞춘 높이로
       const hOverride = this.sliding ? this.slideH * 1.35 : undefined;

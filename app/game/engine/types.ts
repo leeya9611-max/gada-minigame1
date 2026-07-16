@@ -36,6 +36,7 @@ export interface GameResult {
 // 엔진 → UI 로 전달되는 실시간 스냅샷
 export interface HudState {
   phase: GamePhase;
+  mode: GameMode; // E3.5: edu에선 위기 연출·위험 표시를 끔
   coins: number;
   score: number;
   hp: number;
@@ -46,5 +47,6 @@ export interface HudState {
   chaseRatio: number; // gap / MAX_GAP (0=붙잡히기 직전, 1=안전)
   progress: number; // 정류장까지 진행도 0~1 (WP6)
   finale: boolean; // 피날레 돌진 구간(75~95%)
+  banner: string | null; // 안전교육 구간 안내 배너 (E3)
   dialogue: string | null;
 }

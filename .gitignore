@@ -30,3 +30,5 @@ next-env.d.ts
 
 # 원본 에셋(무수정 Kenney 팩) — 저장소에 올리지 않음
 assets/raw/
+# AI 생성 원본(67MB, 기기 의존 — 가공 최종본은 public/assets에 커밋됨)
+assets/incoming_ai/

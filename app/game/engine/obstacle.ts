@@ -1,4 +1,4 @@
-import { GROUND_Y, PROJECTILE, VIEW } from "./config";
+import { GROUND_Y, PLAYER, PROJECTILE, VIEW } from "./config";
 import { sprite } from "./sprites";
 import type {
   Box,
@@ -34,10 +34,11 @@ export class Obstacle implements Entity {
       this.h = 32;
       this.gap = 0;
     } else if (kind === "lowbar") {
-      // 낮은 통과형: 상단이 높게 막힌 배리어(점프로 못 넘음). 하단만 슬라이드 통과.
+      // 낮은 통과형: 상단을 화면 최상단(0)까지 완전 차단 — 1·2단 점프 모두 충돌(E3.5-11).
+      // 하단 gap(56)만 슬라이드(48)로 통과.
       this.w = 48;
-      this.gap = 56; // 슬라이드(48) 통과, 서있는 키(96) 충돌
-      this.h = baseY - this.gap - 30; // 상단을 화면 위(y≈30)까지
+      this.gap = 56;
+      this.h = baseY - this.gap; // top = 0
     } else if (kind === "airbar") {
       // 공중 장애물(노선 obs_air): slot 높이에 고정. 슬라이드/타이밍으로 회피.
       this.w = 48;
@@ -70,28 +71,12 @@ export class Obstacle implements Entity {
   draw(ctx: CanvasRenderingContext2D, _now?: number) {
     const b = this.box;
     if (this.kind === "puddle") {
-      // 시멘트 웅덩이 — 액체 타일 스프라이트(WP4), 미로드 시 벡터
-      const img = sprite("cement");
+      // 시멘트 웅덩이 — AI 에셋(완성 아트라 클립·외곽선 불필요), 미로드 시 벡터
+      const img = sprite("puddle");
       if (img) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.ellipse(b.x + b.w / 2, this.baseY - 3, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
-        ctx.clip();
-        ctx.drawImage(img, b.x - 4, this.baseY - b.h - 2, b.w + 8, b.h + 8);
-        ctx.restore();
-        // 외곽선 + 표면 리플로 배경과 분리(가독성)
-        ctx.save();
-        ctx.strokeStyle = "rgba(31,42,68,0.85)";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.ellipse(b.x + b.w / 2, this.baseY - 3, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = "rgba(255,255,255,0.5)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(b.x + b.w / 2, this.baseY - 8, b.w / 3.2, b.h / 5, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
+        const dw = b.w + 10;
+        const dh = dw * (img.height / img.width);
+        ctx.drawImage(img, b.x - 5, this.baseY - dh + 3, dw, dh);
         return;
       }
       ctx.fillStyle = "#7a8699";
@@ -103,12 +88,29 @@ export class Obstacle implements Entity {
       ctx.ellipse(b.x + b.w / 2, this.baseY - 4, b.w / 2.6, b.h / 3, 0, 0, Math.PI * 2);
       ctx.fill();
     } else if (this.kind === "lowbar") {
-      // 낮은 통과형: 상단은 비계 네팅(점프로 못 넘음), 하단 통과 공간은 열림.
-      // 하단 위험 줄무늬 바가 "슬라이드로 지나가는 지점"을 강조.
+      // 낮은 통과형(E3.5-11): 화면 상단까지 이어진 비계/파이프 골조 —
+      // "밑으로 지나가야 함"이 읽히도록. 하단 위험 줄무늬 바가 통과 지점 강조.
+      // AI 에셋: 세로 게이트(위 잘림) — 하단을 통과 지점에 맞추고 상단 슬라이스를
+      // 화면 꼭대기까지 반복해 기둥 연장(E3.5-11 유지). 미로드 시 기존 벡터 골조.
+      const gateImg = sprite("lowbar");
+      if (gateImg) {
+        const dw = 68; // 히트박스(48)보다 살짝 넓은 시각 폭
+        const dx = b.x + b.w / 2 - dw / 2;
+        const dh = dw * (gateImg.height / gateImg.width);
+        const bottom = b.y + b.h; // 통과 gap 상단
+        ctx.drawImage(gateImg, dx, bottom - dh, dw, dh);
+        // 상단 연장: 이미지 위쪽 슬라이스(잘린 단면)를 y=0까지 타일
+        const srcSliceH = Math.round(gateImg.height * 0.2);
+        const dSliceH = dh * 0.2;
+        for (let ty = bottom - dh; ty > 0; ty -= dSliceH) {
+          ctx.drawImage(gateImg, 0, 0, gateImg.width, srcSliceH, dx, ty - dSliceH, dw, dSliceH);
+        }
+        return;
+      }
       const barH = 60;
       const barY = b.y + b.h - barH; // 바 본체(하단)
       ctx.save();
-      // 측면 지지 기둥
+      // 측면 지지 기둥(화면 꼭대기까지)
       const postImg = sprite("post");
       if (postImg) {
         ctx.drawImage(postImg, b.x - 1, b.y, 9, b.h);
@@ -118,11 +120,16 @@ export class Obstacle implements Entity {
         ctx.fillRect(b.x + 1, b.y, 5, b.h);
         ctx.fillRect(b.x + b.w - 6, b.y, 5, b.h);
       }
-      // 상단 비계 네팅(반투명 격자)
-      ctx.globalAlpha = 0.5;
+      // 수평 파이프(골조가 위로 이어짐을 강조)
+      ctx.fillStyle = "#6b7688";
+      for (let py = b.y + 18; py < barY - 10; py += 46) {
+        ctx.fillRect(b.x - 4, py, b.w + 8, 7);
+      }
+      // 비계 네팅(반투명 격자)
+      ctx.globalAlpha = 0.45;
       ctx.strokeStyle = "#8894a6";
       ctx.lineWidth = 1.5;
-      for (let yy = b.y; yy < barY; yy += 12) {
+      for (let yy = b.y + 4; yy < barY; yy += 12) {
         ctx.beginPath();
         ctx.moveTo(b.x + 4, yy);
         ctx.lineTo(b.x + b.w - 4, yy);
@@ -157,8 +164,42 @@ export class Obstacle implements Entity {
       }
       ctx.restore();
     } else if (this.kind === "airbar") {
-      // 공중 장애물 — 위험 줄무늬 바(hazard), 살짝 부유
+      // 공중 장애물(E3.7-7): "크레인에 매달린 자재" — 로프·후크를 화면 상단까지 렌더해
+      // 허공에 뜬 물체가 아니라 매달린 물체로 읽히게. 히트박스(b)는 불변.
       const bobA = Math.sin((_now ?? 0) / 260 + this.x / 90) * 2;
+      const sway = Math.sin((_now ?? 0) / 700 + this.x / 200) * 3; // 로프 흔들림
+      const cx = b.x + b.w / 2;
+      const topY = b.y + bobA;
+      ctx.save();
+      // 로프: 화면 상단(크레인 방향) → 자재 상단. 미세 사선 스웨이.
+      ctx.strokeStyle = "#4a5163";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx + sway, 0);
+      ctx.lineTo(cx, topY - 8);
+      ctx.stroke();
+      // 후크
+      ctx.fillStyle = "#8894a6";
+      ctx.beginPath();
+      ctx.arc(cx, topY - 6, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#5b6472";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(cx, topY - 1, 5, Math.PI * 1.1, Math.PI * 0.4);
+      ctx.stroke();
+      // 매달린 자재: 파이프 묶음(가로로 눕혀 히트박스 폭에 맞춤), 미로드 시 hazard/벡터
+      const pipesImg = sprite("fall_pipes");
+      if (pipesImg) {
+        const dw = b.w + 6;
+        const dh = dw * (pipesImg.width / pipesImg.height); // 90° 회전 → 종횡 교환
+        ctx.translate(cx, topY + b.h / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(pipesImg, -dh / 2, -dw / 2, dh, dw);
+        ctx.restore();
+        return;
+      }
+      ctx.restore();
       const hazAir = sprite("hazard");
       if (hazAir) {
         ctx.drawImage(hazAir, b.x, b.y + bobA, b.w, b.h);
@@ -176,9 +217,9 @@ export class Obstacle implements Entity {
         }
       }
     } else {
-      // 자재 더미 — 크레이트 스프라이트 2단 적재(WP4), 미로드 시 벡터
-      const crate = sprite("crate");
-      if (crate) {
+      // 자재 더미 — AI 에셋(벽돌·시멘트 팔레트), 미로드 시 벡터
+      const stackImg = sprite("stack");
+      if (stackImg) {
         // 발밑 그림자
         ctx.save();
         ctx.fillStyle = "rgba(31,42,68,0.3)";
@@ -186,15 +227,10 @@ export class Obstacle implements Entity {
         ctx.ellipse(b.x + b.w / 2, this.baseY - 1, b.w * 0.62, 7, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
-        const half = b.h / 2;
-        ctx.drawImage(crate, b.x, b.y + half, b.w, half);
-        ctx.drawImage(crate, b.x + 2, b.y, b.w - 4, half);
-        // 외곽선으로 배경과 분리
-        ctx.save();
-        ctx.strokeStyle = "rgba(31,42,68,0.55)";
-        ctx.lineWidth = 2.5;
-        ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
-        ctx.restore();
+        // 히트박스 높이에 맞추고 폭은 비율 유지(시각이 살짝 넓음 — 관대 방향)
+        const dh = b.h + 6;
+        const dw = dh * (stackImg.width / stackImg.height);
+        ctx.drawImage(stackImg, b.x + b.w / 2 - dw / 2, this.baseY - dh, dw, dh);
         return;
       }
       ctx.fillStyle = "#c0703c";
@@ -263,25 +299,42 @@ export class Coin implements Entity {
   }
 }
 
-// ── 박소장 투척물: 경고 마크 선행 표시 후 날아옴 ──
+// ── 박소장 투척물: 경고 '!' 선행 → 박소장 손 앞에서 발사(뒤→앞, E3.5) ──
 export class Projectile implements Entity {
   kind: ProjectileKind;
   dead = false;
   spawnedAt: number;
   launched = false;
-  x = VIEW.W + 30;
+  x: number;
   y: number;
-  vx = -PROJECTILE.SPEED;
+  vx = PROJECTILE.SPEED; // 왼쪽(박소장) → 오른쪽(전방)으로 추월 비행
   rot = 0;
-  warnY: number; // 경고 마크 표시 y (플레이어 높이 부근)
+  warnY: number; // 경고 마크·비행 높이
   high: boolean; // 상단 투척(슬라이드로 회피) 여부
+  originX: number; // 발사 원점(박소장 손 앞)
+  warnMs: number; // 경고 노출 시간 — REACT_MS에서 비행 시간을 역산(E3.5-10)
 
-  constructor(kind: ProjectileKind, targetY: number, now: number, high = false) {
+  constructor(
+    kind: ProjectileKind,
+    targetY: number,
+    now: number,
+    high = false,
+    originX = 90
+  ) {
     this.kind = kind;
     this.y = targetY;
     this.warnY = targetY;
     this.spawnedAt = now;
     this.high = high;
+    this.originX = originX;
+    this.x = originX;
+    // 경고 시작 → 명중 최소 REACT_MS 보장: warn + flight >= REACT_MS
+    const flightMs =
+      (Math.max(60, PLAYER.X + PLAYER.W / 2 - originX) / PROJECTILE.SPEED) * 1000;
+    this.warnMs = Math.min(
+      PROJECTILE.WARNING_MS,
+      Math.max(PROJECTILE.MIN_WARN_MS, PROJECTILE.REACT_MS - flightMs)
+    );
   }
 
   get warning(): boolean {
@@ -291,60 +344,87 @@ export class Projectile implements Entity {
   get box(): Box {
     // 경고 단계에는 충돌 없음(화면 밖 취급)
     if (!this.launched) return { x: VIEW.W + 999, y: 0, w: 0, h: 0 };
-    return { x: this.x - 16, y: this.y - 16, w: 32, h: 32 };
+    return { x: this.x - 18, y: this.y - 18, w: 36, h: 36 };
   }
 
   update(dt: number, worldSpeed: number, now: number) {
     if (!this.launched) {
-      if (now - this.spawnedAt >= PROJECTILE.WARNING_MS) this.launched = true;
+      if (now - this.spawnedAt >= this.warnMs) {
+        this.launched = true;
+        this.x = this.originX;
+      }
       return;
     }
-    this.x += (this.vx - worldSpeed * 0.15) * dt;
-    this.rot += dt * 8;
-    if (this.x < -40) this.dead = true;
+    this.x += this.vx * dt; // 화면 기준 전방 비행(플레이어 추월)
+    this.rot += dt * 9;
+    if (this.x > VIEW.W + 60) this.dead = true;
+    // E3.7-9: 소멸 안전망 — 어떤 경로로든 발사 후 6초를 넘긴 투척물은 강제 소멸
+    if (now - this.spawnedAt > this.warnMs + 6000) this.dead = true;
   }
 
   draw(ctx: CanvasRenderingContext2D, now: number) {
     if (!this.launched) {
-      // 경고 텔레그래프: 비행 높이(warnY)에 점선 가이드 + 깜빡이는 느낌표.
-      // 발사가 가까워질수록 깜빡임이 빨라지고 진해진다.
-      const progress = Math.min(
-        1,
-        (now - this.spawnedAt) / PROJECTILE.WARNING_MS
-      );
+      // 경고 텔레그래프(E3.5): 박소장 앞·비행 높이에 큰 '!' — 등장 펄스 + 가속 깜빡임
+      const progress = Math.min(1, (now - this.spawnedAt) / this.warnMs);
       const period = 260 - progress * 160; // 260ms → 100ms 로 가속
       const blink = Math.floor(now / period) % 2 === 0;
-      const wx = VIEW.W - 26;
+      const wx = this.originX + 46; // 박소장 손 앞
+      // 등장 0.3초 팝(1.5→1) + 이후 은은한 펄스
+      const appear = Math.min(1, (now - this.spawnedAt) / 300);
+      const pulse = 1 + Math.sin(now / 130) * 0.08;
+      const sc = (1.5 - 0.5 * appear) * pulse;
 
       ctx.save();
-
-      // 경고 삼각 느낌표 (비행 높이에 표시 — 점선 가이드는 디버그처럼 보여 제거)
-      ctx.globalAlpha = blink ? 1 : 0.4;
+      ctx.translate(wx, this.warnY);
+      ctx.scale(sc, sc);
+      ctx.globalAlpha = blink ? 1 : 0.45;
       ctx.fillStyle = "#ff3b30";
       ctx.beginPath();
-      ctx.moveTo(wx, this.warnY - 16);
-      ctx.lineTo(wx + 16, this.warnY + 12);
-      ctx.lineTo(wx - 16, this.warnY + 12);
+      ctx.moveTo(0, -24);
+      ctx.lineTo(22, 17);
+      ctx.lineTo(-22, 17);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 3;
+      ctx.stroke();
       ctx.fillStyle = "#fff";
-      ctx.font = "bold 18px sans-serif";
+      ctx.font = "bold 26px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("!", wx, this.warnY + 9);
+      ctx.fillText("!", 0, 12);
+      // E3.5-10: 상단/하단 위치 표시 — 상단 투척=▼(숙여!), 하단 투척=▲(뛰어!)
+      ctx.fillStyle = "#ffd23f";
+      ctx.font = "bold 17px sans-serif";
+      ctx.fillText(this.high ? "▼" : "▲", 0, this.high ? 38 : -32);
       ctx.restore();
       return;
     }
 
     ctx.save();
+    // E3.7-9: 플레이어를 지나친 투척물은 페이드 아웃(통과 후 잔존감 제거)
+    const passed = this.x - (PLAYER.X + PLAYER.W + 40);
+    if (passed > 0) ctx.globalAlpha = Math.max(0.15, 1 - passed / 260);
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
+    // AI 에셋 투척물(자체 외곽선 포함) — 미로드 시 기존 벡터
+    const projImg = sprite(this.kind);
+    if (projImg) {
+      // 기존 벡터 풋프린트 유지: papers 44w / tube 36h / megaphone 30w
+      const dw = this.kind === "papers" ? 44 : this.kind === "tube" ? 36 * (projImg.width / projImg.height) : 30;
+      const dh = dw * (projImg.height / projImg.width);
+      ctx.drawImage(projImg, -dw / 2, -dh / 2, dw, dh);
+      ctx.restore();
+      return;
+    }
     if (this.kind === "papers") {
+      // E3.5: 크게 + 진한 외곽선(하늘 배경 가시성)
       ctx.fillStyle = "#fdfdfd";
-      ctx.fillRect(-14, -10, 28, 20);
-      ctx.strokeStyle = "#c9ccd6";
-      ctx.strokeRect(-14, -10, 28, 20);
-      ctx.fillStyle = "#c9ccd6";
-      for (let i = -6; i <= 6; i += 5) ctx.fillRect(-10, i, 20, 1.5);
+      ctx.fillRect(-20, -14, 40, 28);
+      ctx.strokeStyle = "#1f2a44";
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(-20, -14, 40, 28);
+      ctx.fillStyle = "#8a94a8";
+      for (let i = -8; i <= 8; i += 5) ctx.fillRect(-14, i, 28, 2);
     } else if (this.kind === "tube") {
       // 도면 통
       ctx.fillStyle = "#3b7dd8";
@@ -423,12 +503,19 @@ export class Item implements Entity {
       ctx.fillStyle = "#6f4a2f";
       ctx.fillRect(-11, -12, 22, 5);
     } else if (this.kind === "heart") {
-      // 하트(HP 회복)
+      // 하트(HP 회복) — 코인 스타일 원형 배지로 톤 통일(E3.5)
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(0, 0, this.r + 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#e05a72";
+      ctx.lineWidth = 3;
+      ctx.stroke();
       ctx.fillStyle = "#ff4d6d";
       ctx.beginPath();
-      ctx.moveTo(0, 12);
-      ctx.bezierCurveTo(-16, 0, -12, -14, 0, -6);
-      ctx.bezierCurveTo(12, -14, 16, 0, 0, 12);
+      ctx.moveTo(0, 9);
+      ctx.bezierCurveTo(-12, 0, -9, -11, 0, -4);
+      ctx.bezierCurveTo(9, -11, 12, 0, 0, 9);
       ctx.fill();
     } else if (this.kind === "magnet") {
       // 자석(코인 흡인)
@@ -482,7 +569,7 @@ export class FallingObject implements Entity {
   update(dt: number, worldSpeed: number, now: number) {
     this.x -= worldSpeed * dt;
     // 플레이어 진입 타이밍에 낙하 시작(선행 경고는 draw에서)
-    if (!this.armed && this.x < 168 + 300) this.armed = true;
+    if (!this.armed && this.x < PLAYER.X + 300) this.armed = true;
     if (this.armed) {
       this.vy += 2600 * dt;
       this.y += this.vy * dt;
@@ -551,16 +638,15 @@ export class FallingObject implements Entity {
       ctx.restore();
     }
 
-    // 낙하체(자재 기둥) — 확대 + 외곽선으로 대비
+    // 낙하체(파이프 묶음) — AI 에셋(자체 외곽선), 미로드 시 벡터
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.armed && !landed ? now / 260 : 0);
-    const img = sprite("post");
+    const img = sprite("fall_pipes");
     if (img) {
-      ctx.drawImage(img, -17, -25, 34, 50);
-      ctx.strokeStyle = "rgba(31,42,68,0.7)";
-      ctx.lineWidth = 2.5;
-      ctx.strokeRect(-17, -25, 34, 50);
+      const dh = 54;
+      const dw = dh * (img.width / img.height);
+      ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
     } else {
       ctx.fillStyle = "#8a8f9c";
       ctx.fillRect(-15, -22, 30, 44);
