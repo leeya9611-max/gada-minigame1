@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "gate:clearance": "tsc scripts/clearance_gate.ts app/game/engine/config.ts --outDir .gate --module commonjs --target es2020 --moduleResolution node --skipLibCheck && node .gate/scripts/clearance_gate.js && rm -rf .gate",
+    "prebuild": "npm run gate:clearance"
   },
   "dependencies": {
     "next": "14.2.5",

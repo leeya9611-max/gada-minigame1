@@ -45,32 +45,50 @@ export const SPAWN = {
   COIN_MAX_MS: 1500,
   // E3.7-8: 절차 스폰 코인 최대 높이(px, 지면 기준 중심) — 1단 점프 도달권(머리 ~226px) 내
   COIN_MAX_H: 160,
+  // E3.9-4: 장애물 최소 스폰 간격(초) — 속도와 무관하게 시간 기준(거리 = 속도×0.7s)
+  OBSTACLE_MIN_INTERVAL_S: 0.7,
+  // E3.9-5: fence(2단층)는 엔들리스 중반부터
+  FENCE_FROM_S: 35,
   ITEM_MIN_MS: 9000, // 특수 아이템 등장 주기
   ITEM_MAX_MS: 16000,
 } as const;
 
-// 3단계: 박소장 투척 밸런스
+// 3단계: 박소장 투척 밸런스.
+// E3.8-1: 직선 투척(상·하 HIGH/LOW) 폐지 → 낙하 지점 방식.
+// 포물선으로 화면 위를 넘어가 전방 지면에 낙하 — 마커(그림자+'!')가 1.5~2초 선행.
+// 슬라이드 위협은 lowbar·obs_air가 담당.
 export const PROJECTILE = {
-  WARNING_MS: 2000, // 경고 표시 상한(REACT_MS 역산이 우선 — 아래 참조)
-  // E3.5-10: 반응 창 보장 — "경고 시작 → 명중"이 항상 REACT_MS 이상이 되도록
-  // 경고 시간을 비행 시간에서 역산(warn = max(MIN_WARN, REACT_MS - flight)).
-  REACT_MS: 2000,
-  MIN_WARN_MS: 700, // 경고 최소 노출
-  SPEED: 280, // 플레이어 기준 상대 접근 속도(px/s) — 투척 후 명중까지 0.7초 이상
   GRACE_MS: 4000, // 시작 직후 이 시간 동안은 투척 없음(온보딩)
   GAP_EARLY_MS: 6500, // 초반 평균 투척 간격
   GAP_LATE_MS: 3200, // 후반(램프 최대) 평균 투척 간격
   RAMP_SEC: 60, // 이 시간에 걸쳐 EARLY→LATE 로 간격이 좁아짐
   GAP_JITTER: 0.22, // 평균 간격 대비 ±비율 무작위
-  RETRY_MS: 300, // 상단 투척이 장애물과 겹칠 때 미루고 재시도하는 간격
-  BLOCK_AHEAD_PX: 200, // 상단 투척 보류를 판단하는 플레이어 앞 거리(점프 존)
-  HIGH_CHANCE: 0.3, // 상단(슬라이드로 회피) 투척 비율
-  LOW_MIN: 8, // 하단(점프로 피함) 높이 범위. 슬라이드 높이(48) 미만 유지
-  LOW_MAX: 40,
-  // 상단: 서 있는 상체 높이(히트박스 96 기준). 슬라이드(48) 위로 통과, 서있으면 피격
-  HIGH_MIN: 58,
-  HIGH_MAX: 84,
+  RETRY_MS: 300, // 착지 지점이 장애물·구멍과 겹칠 때 미루고 재시도하는 간격
+  DROP_LEAD_MIN_S: 1.5, // 마커 표시 → 낙하 최소 선행 시간
+  DROP_LEAD_MAX_S: 2.0,
+  DROP_EDU_LEAD_S: 2.0, // 교육은 항상 최대 여유
+  DROP_IMPACT_MS: 120, // 낙하 순간 판정 창(±) — 이때 그 지점에 있으면 피격
+  DROP_DEBRIS_MS: 300, // 낙하 후 파편 이펙트 지속(후 소멸)
+  DROP_ARC_H: 640, // 포물선 보정 높이 — 정점이 화면 위로 넘어감
+  DOUBLE_CHANCE_MAX: 0.35, // 램프 최대에서 2연속 낙하 확률(엔들리스 전용)
+  DOUBLE_GAP_PX: 150, // 2연속 낙하 지점 간격
 } as const;
+
+// E3.9-2: 장애물 3계층 기하 표(px, cell 54 기준).
+// w×h = 렌더 목표 박스(스프라이트는 알파 트림 후 종횡비 유지로 그려짐 — puddle만 폭 기준).
+// hitW/hitH = 충돌 박스 — 높이는 박스의 85%(관대), 폭은 실제 그려지는 폭 기준 85%
+// (종횡비 유지 시 시각 폭 < 박스 폭인 sign·cone은 시각 기준 — 보이지 않는 가장자리 피격 방지).
+// 계층: 1단층(hitH+10을 1단 점프로 클리어) / 2단층(fence, 2단 점프 필요) / 슬라이드층(lowbar).
+export const OBSTACLE_RENDER = {
+  puddle: { w: 90, h: 14, hitW: 76, hitH: 12 }, // 1단층(평면 해저드 — 지상에서만 피격)
+  stack: { w: 60, h: 60, hitW: 48, hitH: 51 }, // 1단층
+  cone: { w: 55, h: 58, hitW: 37, hitH: 49 }, // 1단층
+  sign: { w: 60, h: 60, hitW: 29, hitH: 51 }, // 1단층(시각 폭 34 — 세로 표지판)
+  fence: { w: 50, h: 105, hitW: 42, hitH: 89 }, // 2단층(prop_fence_panel 사용)
+} as const;
+
+// E3.9-2 슬라이드층: lowbar 하단 통과 틈(슬라이드 높이 48 + 여유 4)
+export const LOWBAR_GAP = 52;
 
 // WP3 슬라이드. 홀드 동안 히트박스를 낮춰 상단 투척·낮은 통과형(lowbar) 회피.
 export const SLIDE = {

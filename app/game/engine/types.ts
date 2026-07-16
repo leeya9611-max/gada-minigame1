@@ -7,7 +7,9 @@ export interface Box {
   h: number;
 }
 
-export type ObstacleKind = "puddle" | "stack" | "lowbar" | "airbar";
+// cone/sign: E3.8-2에서 소품 → 정식 장애물 승격(낮은 빈도 스폰)
+// fence: E3.9-2 신규 2단층(2단 점프 필요, prop_fence_panel)
+export type ObstacleKind = "puddle" | "stack" | "lowbar" | "airbar" | "cone" | "sign" | "fence";
 // 웅덩이 / 자재더미 / 낮은통과형(슬라이드) / 공중 장애물(노선 데이터 obs_air)
 export type ProjectileKind = "papers" | "tube" | "megaphone"; // 서류뭉치 / 도면 통 / 확성기
 export type ItemKind = "coffee" | "heart" | "booster" | "magnet";

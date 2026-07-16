@@ -115,8 +115,8 @@ export class Player {
 
   // 상태 → 매니페스트 클립 프레임 파일명
   private currentFrame(now: number): string | null {
-    if (this.isInvuln(now)) return "hurt.png";
-    if (this.sliding) return "slide.png";
+    if (this.isInvuln(now)) return "hurt.webp";
+    if (this.sliding) return "slide.webp";
     if (!this.onGround) {
       if (this.vy < 0) {
         // 점프 클립(crouch→jump→apex, 14fps, once)

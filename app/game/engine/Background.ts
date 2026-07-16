@@ -14,9 +14,9 @@ export type MapKey = "map1" | "map2";
 export const MAP_LAYERS: Record<MapKey, MapLayers> = {
   // 도심 재건축(석양): 원경 스카이라인 + 공사중 건물 중경 + 연석·흙 바닥 (3단)
   map1: {
-    sky: "/assets/maps/map1/sky.png",
-    silhouette: "/assets/maps/map1/silhouette.png",
-    ground: "/assets/maps/map1/ground.png",
+    sky: "/assets/maps/map1/sky.webp",
+    silhouette: "/assets/maps/map1/silhouette.webp",
+    ground: "/assets/maps/map1/ground.webp",
   },
   // 아파트 골조(황혼): 합성 원경 + 바닥 스트립 (2단)
   map2: {
@@ -30,10 +30,15 @@ const P_SKY = 0.06;
 const P_SIL = 0.3;
 const P_GROUND = 1;
 
-const SIL_H = 330; // 중경 표시 높이(바닥을 GROUND_Y에 정렬)
+// 중경 표시 높이 — E3.7-1 규칙: 화면 높이의 55~65% (450×0.62 ≈ 280)
+const SIL_H = 280;
+// 중경 하단을 지면 상단선보다 아래로 내려, 밑단 컨테이너 줄이 지면 스트립 뒤로 살짝 묻히게
+const SIL_SINK = 30;
 
-// 중경 필터: 채도 -40%·명도 +10% — ctx.filter 대신 픽셀 연산(웹뷰 호환·프레임 비용 0)
-const MID_SATURATE = 0.6;
+// 중경 필터: 채도 -50%·명도 +10% — ctx.filter 대신 픽셀 연산(웹뷰 호환·프레임 비용 0).
+// E3.8-3: 컨테이너 더미 등 중경 하단 오브젝트가 장애물(자재더미)과 구분되도록 채도 강하.
+// bg_mid_buildings_v2는 이 필터를 전제로 채도가 보상 선적용된 이미지 — 필터를 끄거나 바꾸지 말 것.
+const MID_SATURATE = 0.5;
 const MID_BRIGHTEN = 1.1;
 
 type LayerSource = HTMLImageElement | HTMLCanvasElement;
@@ -104,12 +109,17 @@ export class Background {
     // 원경: 밑단을 지면선에 정렬, 화면 위까지 커버. 미러 타일링으로 이음새 제거.
     const skyH = Math.max(GROUND_Y, GROUND_Y * 1.02);
     this.tile(ctx, sky, GROUND_Y - skyH, skyH, scroll * P_SKY, { mirror: true });
-    // 중경(있는 맵만): 바닥을 지면선에 정렬. 필터 캐시본 사용, 미러 타일링.
+    // 중경(있는 맵만): 하단을 지면선+SIL_SINK에 정렬(컨테이너 줄이 지면 뒤로 묻힘).
+    // 필터 캐시본 사용, 미러 타일링.
     if (silhouette) {
-      this.tile(ctx, this.midFiltered ?? silhouette, GROUND_Y - SIL_H, SIL_H, scroll * P_SIL, {
-        alpha: 0.85,
-        mirror: true,
-      });
+      this.tile(
+        ctx,
+        this.midFiltered ?? silhouette,
+        GROUND_Y + SIL_SINK - SIL_H,
+        SIL_H,
+        scroll * P_SIL,
+        { alpha: 0.85, mirror: true }
+      );
     }
     // 바닥 스트립: 지면 밴드, 월드 속도로 스크롤 (노선 모드에선 지형 렌더러가 대체)
     if (!skipGround) {

@@ -41,6 +41,11 @@ def scaled(img):
     w, h = img.size
     return img.resize((max(1, round(w * SCALE)), max(1, round(h * SCALE))), Image.LANCZOS)
 
+def save_img(im, path):
+    """WebP q95 — 시각 무손실·소용량. 256색 양자화 금지(그라데이션 밴딩·그레인)."""
+    path = path.rsplit('.', 1)[0] + '.webp'
+    im.save(path, 'WEBP', quality=95, method=6)
+
 def build_uniform(frames, names, outdir, pad_top=12, pad_side=14, pad_bottom=10):
     """통일 캔버스: 발바닥(bbox bottom)을 footY에, 수평은 bbox 중심을 anchorX에 정렬"""
     frames = [scaled(f) for f in frames]
@@ -51,12 +56,12 @@ def build_uniform(frames, names, outdir, pad_top=12, pad_side=14, pad_bottom=10)
     for f, name in zip(frames, names):
         canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         canvas.paste(f, (anchorX - f.width // 2, footY - f.height), f)
-        canvas.save(os.path.join(outdir, name))
+        save_img(canvas, os.path.join(outdir, name))
     return {"w": W, "h": H, "anchorX": anchorX, "footY": footY}
 
 def build_raw(frame, name, outdir):
     f = scaled(frame)
-    f.save(os.path.join(outdir, name))
+    save_img(f, os.path.join(outdir, name))
     return {"name": name, "w": f.width, "h": f.height}
 
 meta = {}

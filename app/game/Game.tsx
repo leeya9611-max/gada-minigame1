@@ -924,7 +924,7 @@ function LobbyScreen({
         {/* 로비 대기 연출: 서류 든 김반장 (AI 시트 mixed) */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/assets/sprites/gimbanjang_custom/idle_docs.png"
+          src="/assets/sprites/gimbanjang_custom/idle_docs.webp"
           alt=""
           aria-hidden
           draggable={false}
@@ -1057,7 +1057,7 @@ function ChaseGauge({ hud }: { hud: HudState }) {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/assets/sprites/parksojang_custom/idle.png"
+        src="/assets/sprites/parksojang_custom/idle.webp"
         alt="박소장"
         style={{ height: 22, width: "auto" }}
         draggable={false}
@@ -1212,7 +1212,7 @@ function ClearOverlay({
       {/* 완주 성공 연출: 환호하는 김반장 (AI 시트 mixed cheer) */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/assets/sprites/gimbanjang_custom/cheer.png"
+        src="/assets/sprites/gimbanjang_custom/cheer.webp"
         alt=""
         aria-hidden
         draggable={false}

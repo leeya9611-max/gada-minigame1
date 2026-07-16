@@ -12,7 +12,7 @@ def trim(im):
     ys, xs = np.where(a > 16)
     return im.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
 
-def save(im, rel, h=None, w=None, square=None):
+def save(im, rel, h=None, w=None, square=None, webp=False):
     if square:
         s = max(im.size)
         pad = Image.new("RGBA", (s, s), (0, 0, 0, 0))
@@ -24,7 +24,12 @@ def save(im, rel, h=None, w=None, square=None):
         im = im.resize((w, max(1, round(im.height * w / im.width))), Image.LANCZOS)
     path = os.path.join(DST, rel)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    im.save(path)
+    if webp:
+        # 대형 배경: WebP q95(시각 무손실). 256색 양자화 금지(밴딩·그레인)
+        path = path.rsplit('.', 1)[0] + '.webp'
+        im.save(path, 'WEBP', quality=95, method=6)
+    else:
+        im.save(path)
     print(rel, Image.open(path).size)
 
 def load(rel):
@@ -54,18 +59,18 @@ save(load("props/prop_board_blank.png"), "ui/board_blank.png", w=640)  # 배너�
 
 # ── 배경 ──
 far = Image.open(os.path.join(SRC, "bg/bg_far_sunset.png")).convert("RGBA")
-save(far, "maps/map1/sky.png", h=700)
+save(far, "maps/map1/sky.png", h=700, webp=True)
 
 mid = Image.open(os.path.join(SRC, "bg/bg_mid_buildings.png")).convert("RGBA")
 mid = mid.crop((0, 148, mid.width, 1300))
-save(mid, "maps/map1/silhouette.png", h=660)
+save(mid, "maps/map1/silhouette.png", h=660, webp=True)
 
 g = Image.open(os.path.join(SRC, "ground/ground_strip.png")).convert("RGBA")
 top = g.crop((0, 0, g.width, 320))
 mirrored = Image.new("RGBA", (top.width * 2, top.height))
 mirrored.paste(top, (0, 0))
 mirrored.paste(top.transpose(Image.FLIP_LEFT_RIGHT), (top.width, 0))
-save(mirrored, "maps/map1/ground.png", h=200)
+save(mirrored, "maps/map1/ground.png", h=200, webp=True)
 
 # 흙 채움 색 샘플(지형 dirt fill 코드 값)
 arr = np.array(g)

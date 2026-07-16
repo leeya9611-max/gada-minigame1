@@ -20,7 +20,7 @@ interface CharMeta {
   realH: number; // 실제 키 = run1 알파 bbox 높이
 }
 
-// realH/footY는 run1.png 알파 bbox 실측값 (캔버스 높이로 그리면 안 됨 — 캐릭터별 여백이 달라 크기 틀어짐)
+// realH/footY는 run1 알파 bbox 실측값 (캔버스 높이로 그리면 안 됨 — 캐릭터별 여백이 달라 크기 틀어짐)
 // 2026-07: AI 생성 시트(incoming_ai) 분할본 — 발바닥 기준선 정렬(footY=캔버스 하단 여백 10px)
 export const CHARS: Record<CharKey, CharMeta> = {
   gimbanjang: {
@@ -69,7 +69,7 @@ export function clipFrame(who: CharKey, name: string, elapsedMs: number): string
 }
 
 // ── 구세트(비균일 캔버스) 프레임: slide/hurt/idle — 이미지 자체가 트림돼 있음 ──
-const RAW_FRAMES = new Set(["slide.png", "hurt.png", "idle.png"]);
+const RAW_FRAMES = new Set(["slide.webp", "hurt.webp", "idle.webp"]);
 
 export function isRawFrame(who: CharKey, file: string): boolean {
   return who === "gimbanjang" && RAW_FRAMES.has(file);
@@ -116,7 +116,7 @@ function collectCharSources(): [string, string][] {
       for (const f of clip.frames) seen.add(f);
     }
     // 클립 외 개별 프레임(slide/hurt/idle 등)
-    for (const extra of ["slide.png", "hurt.png", "idle.png", "fall.png"]) seen.add(extra);
+    for (const extra of ["slide.webp", "hurt.webp", "idle.webp", "fall.webp"]) seen.add(extra);
     for (const f of seen) out.push([`${who}/${f}`, `${meta.dir}/${f}`]);
   }
   return out;
@@ -139,7 +139,10 @@ export function loadSprites(): Promise<void> {
     };
     for (const [key, src] of entries) {
       const img = new Image();
-      img.onload = tick;
+      img.onload = () => {
+        computeTrim(key, img); // E3.9-1: 알파 트리밍(1회)
+        tick();
+      };
       img.onerror = tick; // 실패해도 진행(해당 스프라이트만 벡터 폴백)
       img.src = src;
       images.set(key, img);
@@ -160,6 +163,69 @@ function get(key: string): HTMLImageElement | null {
 // 소품
 export function sprite(key: SpriteKey): HTMLImageElement | null {
   return get(key);
+}
+
+// ── E3.9-1: 로드 시 알파 트리밍 ──
+// 투명 여백이 남은 PNG가 반입돼도 OBSTACLE_RENDER 크기가 실물(알파 bbox) 기준이 되도록,
+// 로드 시 bbox를 1회 계산해 소스 크롭으로 사용한다. 계산 실패 시 원본 전체 사용.
+interface TrimBox {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+}
+const trimBoxes = new Map<string, TrimBox>();
+
+function computeTrim(key: string, img: HTMLImageElement) {
+  try {
+    const cv = document.createElement("canvas");
+    cv.width = img.naturalWidth;
+    cv.height = img.naturalHeight;
+    const c = cv.getContext("2d");
+    if (!c) return;
+    c.drawImage(img, 0, 0);
+    const a = c.getImageData(0, 0, cv.width, cv.height).data;
+    let x0 = cv.width, y0 = cv.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < cv.height; y++) {
+      for (let x = 0; x < cv.width; x++) {
+        if (a[(y * cv.width + x) * 4 + 3] > 16) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    if (x1 < 0) return; // 전부 투명
+    trimBoxes.set(key, { sx: x0, sy: y0, sw: x1 - x0 + 1, sh: y1 - y0 + 1 });
+  } catch {
+    /* CORS·미지원 환경 → 트림 없이 원본 사용 */
+  }
+}
+
+// 트림된 실물 종횡비(w/h). 미로드·미계산 시 natural 비율, 그것도 없으면 1.
+export function spriteAspect(key: SpriteKey): number {
+  const t = trimBoxes.get(key);
+  if (t) return t.sw / t.sh;
+  const img = get(key);
+  return img && img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : 1;
+}
+
+// 트림 영역을 소스로 대상 사각형에 그린다. 미로드 시 false(호출부 벡터 폴백).
+export function drawSprite(
+  ctx: CanvasRenderingContext2D,
+  key: SpriteKey,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number
+): boolean {
+  const img = get(key);
+  if (!img) return false;
+  const t = trimBoxes.get(key);
+  if (t) ctx.drawImage(img, t.sx, t.sy, t.sw, t.sh, dx, dy, dw, dh);
+  else ctx.drawImage(img, dx, dy, dw, dh);
+  return true;
 }
 
 // 캐릭터 프레임

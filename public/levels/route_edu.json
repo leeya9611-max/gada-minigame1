@@ -400,16 +400,6 @@
    "type": "coin"
   },
   {
-   "col": 63,
-   "slot": 0,
-   "type": "obs_high"
-  },
-  {
-   "col": 66,
-   "slot": 0,
-   "type": "obs_high"
-  },
-  {
    "col": 64,
    "slot": 3,
    "type": "coin"
@@ -425,12 +415,17 @@
    "type": "coin"
   },
   {
-   "col": 82,
+   "col": 66,
+   "slot": 0,
+   "type": "obs_fence"
+  },
+  {
+   "col": 75,
    "slot": 0,
    "type": "obs_high"
   },
   {
-   "col": 85,
+   "col": 82,
    "slot": 0,
    "type": "obs_high"
   },
@@ -555,24 +550,24 @@
    "type": "obs_low"
   },
   {
-   "col": 280,
-   "slot": 0,
-   "type": "obs_high"
-  },
-  {
-   "col": 300,
-   "slot": 2,
-   "type": "obs_air"
-  },
-  {
    "col": 266,
    "slot": 2,
    "type": "coin"
   },
   {
+   "col": 280,
+   "slot": 0,
+   "type": "obs_high"
+  },
+  {
    "col": 285,
    "slot": 2,
    "type": "coin"
+  },
+  {
+   "col": 300,
+   "slot": 2,
+   "type": "obs_air"
   },
   {
    "col": 305,

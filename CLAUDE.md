@@ -18,8 +18,12 @@
 - ✅ **AI 에셋 반입**(2026-07-16, `assets/incoming_ai` → `public/assets`): 캐릭터 시트 알파 분할(김반장 run **7프레임** — README 표기 8이나 실측 7 / 액션 4포즈 / 서류 idle·cheer, 박소장 run6+투척3), 배경 3레이어(중경 픽셀 필터 캐시 — ctx.filter 미사용), 지면 미러 베이크 타일, 장애물·코인·투척물·소품·정류장 교체(히트박스 무변경·벡터 폴백 보존), PNG 256색 양자화. 반입 스크립트: `tools/asset_intake/`. AI 원본(`assets/incoming_ai/`)은 gitignore — 기기 의존
 - ✅ **E3.6-1**(점프 물리: 1단 130px·정점 2단 213px 실측, 하강 중력 1.3배) — E3.7-8 선행 의존으로만 적용. **E3.6의 2·3(잡힘 연출·주스 이펙트)는 미착수**
 - ✅ **E3.7 6~9**(HUD 다크 패널 `hudPanel`, obs_air=크레인 매달린 자재(로프·후크+fall_pipes 회전), 코인 도달성 검증(`SPAWN.COIN_MAX_H` 160·route_edu 최고 slot3=111px — 수정 불필요), 투척물 소멸 보강(수명 상한+통과 후 페이드)) — 헤드리스 검증 ALL PASS
-- ⚠ **E3.7 1~5는 미착수**(중경 채도·OBSTACLE_RENDER 상수표·slide 롤백·정류장 크기·지면 돌 톤 — 별도 전달본 프롬프트 예정)
-- ▶ **다음: E3.7 1~5 → E4**(주간 랭킹) → E5(팔레트) → E6(QA)
+- ✅ **E3.8**(투척 리워크+장애물 정합): 직선 투척(HIGH/LOW) 폐지 → **낙하 지점 방식**(포물선 화면 위 통과, 마커 그림자+'!' 1.5~2초 선행, 낙하 순간만 판정 `DROP_IMPACT_MS`, 파편 0.3초 후 소멸, 램프=간격 단축+2연속). 콘·표지판 정식 장애물 승격(`OBSTACLE_RENDER`, 히트박스 −15%, 엔들리스 풀 9%씩). drawProps 트랙사이드 소품 제거(지면 레인 무충돌 진한 오브젝트 금지, fence 미사용 보관). 중경 채도 0.5로 강하(컨테이너 구분). 헤드리스 ALL PASS(마커 선행 ≥1.5s·회피 봇 피격 0/26·콘 충돌·회귀)
+- ✅ **E3.9**(장애물 기하 정합): 로드 시 알파 트리밍(`sprites.ts` drawSprite/spriteAspect), 3계층 기하 표(`OBSTACLE_RENDER` — 1단층 puddle/stack/cone/sign·2단층 **fence 신규**(prop_fence_panel, obs_fence 레벨 타입)·슬라이드층 lowbar 틈 52), **클리어런스 빌드 게이트**(`npm run gate:clearance`, prebuild 자동 — 히트박스 기준 체공 거리 ≥ W+52+30), 스폰 최소 간격 0.7s(+fence 후 0.6s 추가 — 체공 1s 커버), lowbar↔낙하 이중구속 상호 배제(속도×0.75 반경), fence 엔들리스 35s부터·교육 구간2 1회(route_edu 재편·간격 위반 0). 헤드리스 ALL PASS(공정 구간 45s 피격 0)
+- ✅ **E3.7-3 slide 롤백**(2026-07-16): AI slide 포즈(앉은 자세)가 65px 렌더에서 인형처럼 축소 → 구 커스텀 slide.png(462×170 가로 포즈) 복원, 렌더 크기·RAW 경로 유지. AI 세트가 구 디자인에 스타일 매칭돼 이질감 없음
+- ✅ **중경 v2 교체**(2026-07-16): bg_mid_buildings_v2 반입(WebP q95, 표시 높이 280=화면 62% — E3.7-1 규칙 충족), 하단 SIL_SINK 30px로 지면 뒤 묻힘, 채도 필터 유지(**v2는 필터 보상 선적용 — 필터 변경 금지**, Background.ts 주석)
+- ⚠ **E3.7 잔여**(정류장 크기·지면 돌 톤)
+- ▶ **다음: E3.7 잔여 → E4**(주간 랭킹) → E5(팔레트) → E6(QA)
 - E 단계 프롬프트는 `docs/개발_작업지시서_v3_이벤트피벗.md`의 블록을 그대로 따를 것
 
 ## 스택·구조
@@ -51,3 +55,6 @@
 
 - 커스텀 디자인 원본: `/Users/worksmate/Documents/야리끼리 디자인/` (기기 의존 — 새 환경엔 없을 수 있음, repo의 public/assets가 최종본)
 - Kenney CC0(assets/raw는 gitignore). 이미지 처리 스크립트는 python3+Pillow 사용해 왔음
+- **압축 규칙(2026-07-16 화질 사고 후 확정): PNG 256색 양자화 금지** — 그라데이션 밴딩·그레인으로 체감 화질 급락. 대형 에셋(캐릭터 프레임·배경 레이어)은 **WebP q95**(시각 무손실, `tools/asset_intake/` 스크립트가 자동 적용), 소형 오브젝트는 PNG 원본 유지
+- slide.png→slide.webp는 구 커스텀 포즈(가로형) 고정 — AI 앉은 포즈는 축소돼 보여 롤백(E3.7-3). 재반입 시 덮어쓰지 말 것
+- 헤드리스 스크린샷 하니스는 webp 미지원(node-canvas) → scratchpad shadow PNG 변환 경유

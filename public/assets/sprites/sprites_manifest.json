@@ -4,12 +4,12 @@
     "anchor": { "x": 280, "baseline": "bottom" },
     "clips": {
       "run": {
-        "frames": ["run1.png", "run2.png", "run3.png", "run4.png", "run5.png", "run6.png", "run7.png"],
+        "frames": ["run1.webp", "run2.webp", "run3.webp", "run4.webp", "run5.webp", "run6.webp", "run7.webp"],
         "fps": 12,
         "loop": true
       },
-      "jump": { "frames": ["jump.png"], "fps": 14, "loop": false },
-      "fall": { "frames": ["fall.png"], "fps": 1, "loop": false }
+      "jump": { "frames": ["jump.webp"], "fps": 14, "loop": false },
+      "fall": { "frames": ["fall.webp"], "fps": 1, "loop": false }
     }
   },
   "parksojang": {
@@ -17,12 +17,12 @@
     "anchor": { "x": 208, "baseline": "bottom" },
     "clips": {
       "run": {
-        "frames": ["run1.png", "run2.png", "run3.png", "run4.png", "run5.png", "run6.png"],
+        "frames": ["run1.webp", "run2.webp", "run3.webp", "run4.webp", "run5.webp", "run6.webp"],
         "fps": 12,
         "loop": true
       },
-      "throw": { "frames": ["throw1.png", "throw2.png", "throw3.png"], "fps": 12, "loop": false },
-      "idle": { "frames": ["idle.png"], "fps": 1, "loop": true }
+      "throw": { "frames": ["throw1.webp", "throw2.webp", "throw3.webp"], "fps": 12, "loop": false },
+      "idle": { "frames": ["idle.webp"], "fps": 1, "loop": true }
     }
   }
 }

@@ -9,6 +9,7 @@ export type LevelObjectType =
   | "obs_high" // 자재 더미(점프)
   | "obs_air" // 공중 장애물(슬라이드/타이밍)
   | "obs_fall" // 낙하물(경고 후 낙하)
+  | "obs_fence" // 안전 펜스(2단 점프, E3.9)
   | "coin"
   | "heart" // HP 회복
   | "coffee" // HP 회복(다방커피)

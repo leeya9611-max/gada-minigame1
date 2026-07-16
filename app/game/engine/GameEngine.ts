@@ -422,17 +422,31 @@ export class GameEngine {
   private spawnEndless(dtMs: number) {
     this.tObstacle -= dtMs;
     if (this.tObstacle <= 0) {
-      // 점프형(puddle/stack) 위주 + 슬라이드형(lowbar) 30%
+      // 점프형(puddle/stack) 위주 + 슬라이드형(lowbar) + 콘·표지판 낮은 빈도(E3.8-2)
+      // E3.9-5: 2단층 fence는 중반(FENCE_FROM_S)부터 풀에 합류
       const r = Math.random();
-      const kind: ObstacleKind =
-        r < 0.3 ? "lowbar" : r < 0.65 ? "puddle" : "stack";
+      const fenceOk = this.elapsed >= SPAWN.FENCE_FROM_S;
+      let kind: ObstacleKind = fenceOk
+        ? r < 0.26 ? "lowbar" : r < 0.52 ? "puddle" : r < 0.76 ? "stack" : r < 0.85 ? "cone" : r < 0.93 ? "sign" : "fence"
+        : r < 0.28 ? "lowbar" : r < 0.56 ? "puddle" : r < 0.82 ? "stack" : r < 0.91 ? "cone" : "sign";
+      // lowbar가 대기 중인 낙하 지점과 겹치면 이중구속(점프↔슬라이드) → 점프형으로 대체
+      if (kind === "lowbar") {
+        const spawnX = VIEW.W + 40;
+        const clash = this.projectiles.some(
+          (p) => !p.dead && !p.landed && Math.abs(p.targetX - spawnX) < this.worldSpeed * 0.75
+        );
+        if (clash) kind = "puddle";
+      }
       this.obstacles.push(new Obstacle(kind));
-      // 속도가 빠를수록 간격을 살짝 좁힘
+      // 속도가 빠를수록 간격을 살짝 좁히되, E3.9-4: 최소 간격 ≥ 0.7초(시간 기준) 보장.
+      // fence(2단 점프)는 체공이 ~1초라 후속 장애물 회피가 물리적으로 불가 → 추가 여유 0.6초.
       const f = SPEED.BASE / this.worldSpeed;
-      this.tObstacle = rand(
-        SPAWN.OBSTACLE_MIN_MS * f,
-        SPAWN.OBSTACLE_MAX_MS * f
-      );
+      const fenceExtra = kind === "fence" ? 600 : 0;
+      this.tObstacle =
+        Math.max(
+          SPAWN.OBSTACLE_MIN_INTERVAL_S * 1000,
+          rand(SPAWN.OBSTACLE_MIN_MS * f, SPAWN.OBSTACLE_MAX_MS * f)
+        ) + fenceExtra;
     }
 
     this.tCoin -= dtMs;
@@ -489,6 +503,13 @@ export class GameEngine {
           this.obstacles.push(ob);
           break;
         }
+        case "obs_fence": {
+          // E3.9: 2단층 안전 펜스(2단 점프 학습·중반 위협)
+          const ob = new Obstacle("fence", groundY);
+          ob.x = screenX - ob.w / 2;
+          this.obstacles.push(ob);
+          break;
+        }
         case "obs_air": {
           const ob = new Obstacle("airbar", groundY, airY);
           ob.x = screenX - ob.w / 2;
@@ -522,47 +543,80 @@ export class GameEngine {
     }
   }
 
-  // 박소장 투척 (경고 선행). 노선 index가 높을수록 간격이 짧아짐.
+  // 박소장 투척(E3.8: 낙하 지점 방식). 노선 index가 높을수록 간격이 짧아짐.
   private spawnThrows(dtMs: number, now: number) {
     // E3: 안전교육은 투척 학습 구간(진행도 THROW_FROM)부터만
     if (this.mode === "edu" && this.progress < EDU.THROW_FROM) return;
     this.tProjectile -= dtMs;
     if (this.tProjectile > 0) return;
-    // 하단(점프로 회피) 위주, 가끔 상단(슬라이드 회피)로 리듬 변화.
-    // E3.5-9: 교육은 확정 순서 — 하단(점프) → 상단(슬라이드) 교대로 상·하 1회씩 보장.
-    const high =
+    // 착지 지점 = 현재 속도 기준 1.5~2초 도달 거리(교육은 최대 여유 고정)
+    const leadS =
       this.mode === "edu"
-        ? this.eduThrowSeq++ % 2 === 1
-        : Math.random() < PROJECTILE.HIGH_CHANCE;
-    // 상단 투척은 점프를 강제하는 장애물과 겹치면 회피 불가 → 임박 시에만 보류.
-    if (high && this.obstacleAhead()) {
+        ? PROJECTILE.DROP_EDU_LEAD_S
+        : rand(PROJECTILE.DROP_LEAD_MIN_S, PROJECTILE.DROP_LEAD_MAX_S);
+    const targetX = PLAYER.X + PLAYER.W / 2 + this.worldSpeed * leadS;
+    // 장애물·구멍·정류장과 겹치면 보류(회피 불가 이중구속 방지)
+    if (this.landingBlocked(targetX)) {
       this.tProjectile = PROJECTILE.RETRY_MS;
-      if (this.mode === "edu") this.eduThrowSeq--; // 보류 시 확정 순서 유지
       return;
     }
-    const kind: ProjectileKind = pick(["papers", "tube", "megaphone"]);
-    const off = high
-      ? rand(PROJECTILE.HIGH_MIN, PROJECTILE.HIGH_MAX)
-      : rand(PROJECTILE.LOW_MIN, PROJECTILE.LOW_MAX);
-    const baseY = this.groundYAt(PLAYER.X + PLAYER.W / 2);
-    const y = (baseY > VIEW.H ? GROUND_Y : baseY) - off;
-    this.projectiles.push(new Projectile(kind, y, now, high));
+    this.spawnDrop(targetX, leadS * 1000, now);
     // E3.5-4: 교육 톤 완화 — 박소장 잔소리는 둘에 하나만(혼나는 경험 방지)
+    this.eduThrowSeq++;
     if (this.mode !== "edu" || this.eduThrowSeq % 2 === 1) {
       this.say(this.pickLine(DIALOGUE.throw), now);
+    }
+    // E3.8-1 난이도 램프: 엔들리스는 램프에 따라 2연속 낙하(두 번째는 한 걸음 뒤)
+    const ramp = Math.min(1, this.elapsed / PROJECTILE.RAMP_SEC);
+    if (this.mode !== "edu" && Math.random() < PROJECTILE.DOUBLE_CHANCE_MAX * ramp) {
+      const x2 = targetX + PROJECTILE.DOUBLE_GAP_PX;
+      const lead2 = leadS * 1000 + (PROJECTILE.DOUBLE_GAP_PX / this.worldSpeed) * 1000;
+      if (!this.landingBlocked(x2)) this.spawnDrop(x2, lead2, now);
     }
     const idxScale = 1 / (1 + ((this.level?.index ?? 1) - 1) * ROUTE.INDEX_SPEED_STEP);
     this.tProjectile = this.nextThrowDelay() * idxScale;
   }
 
-  // 플레이어 바로 앞 구간에 장애물이 임박했는지 (투척 보류 판단용)
-  private obstacleAhead(): boolean {
-    const from = PLAYER.X;
-    const to = PLAYER.X + PROJECTILE.BLOCK_AHEAD_PX;
-    return this.obstacles.some((o) => {
-      const right = o.box.x + o.box.w;
-      return right > from && o.box.x < to;
-    });
+  // 낙하 투척물 1개 생성 — 박소장 손에서 포물선으로 targetX 지면에 낙하
+  private spawnDrop(targetX: number, leadMs: number, now: number) {
+    const kind: ProjectileKind = pick(["papers", "tube", "megaphone"]);
+    const bossX = this.bossFootX;
+    const rawGy = this.groundYAt(Math.max(0, Math.min(VIEW.W - 1, bossX)));
+    const bossGy = rawGy > VIEW.H ? GROUND_Y : rawGy;
+    const handX = bossX + 44;
+    const handY = bossGy - TARGET_CHAR_H * 0.78; // 손 높이 근사
+    this.projectiles.push(
+      new Projectile(kind, now, targetX, this.dropGroundY(targetX), handX, handY, leadMs)
+    );
+  }
+
+  // 착지 지점(화면 x)이 낙하에 부적합한지 — 장애물 인접·구멍 위·정류장 직전.
+  // lowbar는 슬라이드 강제라 낙하 회피 점프와 이중구속 → 점프 체공 거리(속도×0.75s)만큼 배제.
+  private landingBlocked(targetX: number): boolean {
+    if (
+      this.obstacles.some((o) => {
+        const r = o.kind === "lowbar" ? this.worldSpeed * 0.75 : 110;
+        return Math.abs(o.box.x + o.box.w / 2 - targetX) < r;
+      })
+    ) {
+      return true;
+    }
+    if (this.level) {
+      const wx = this.bgScroll + targetX;
+      if (wx > this.lengthPx - 220) return true; // 정류장 구간 금지
+      const col = Math.floor(wx / (this.level.cellSize ?? 54));
+      const g = this.profile[Math.min(this.profile.length - 1, col)];
+      if (!g || g.gap) return true; // 구멍 위 낙하 금지
+    }
+    return false;
+  }
+
+  // 착지 지점의 지면 y (화면 밖 오른쪽도 월드 프로파일로 계산)
+  private dropGroundY(targetX: number): number {
+    if (!this.level) return GROUND_Y;
+    const col = Math.floor((this.bgScroll + targetX) / (this.level.cellSize ?? 54));
+    const g = this.profile[Math.min(this.profile.length - 1, col)];
+    return g && !g.gap ? GROUND_Y - g.h * STEP_PX : GROUND_Y;
   }
 
   // 경과 시간에 따라 투척 간격을 EARLY→LATE 로 좁힌다(±지터).
@@ -602,10 +656,9 @@ export class GameEngine {
       }
     }
 
-    // 투척물 피격. 슬라이드 중이면 상단 투척(high)을 숙여서 통과.
+    // 투척물 피격(E3.8): 낙하 순간 그 지점에 있으면 피격 — 판정 창은 Projectile.box가 관리
     for (const p of this.projectiles) {
-      if (p.dead || p.warning) continue;
-      if (p.high && this.player.sliding) continue;
+      if (p.dead) continue;
       if (intersectsPadded(pbox, p.box, 4)) {
         applyHit();
         p.dead = true;
@@ -735,7 +788,8 @@ export class GameEngine {
       if (!this.level) this.drawGround(ctx);
     }
     if (this.level) this.drawTerrain(ctx);
-    this.drawProps(ctx); // 트랙사이드 소품(펜스·콘·안전표지) — 게임플레이 뒤 레이어
+    // E3.8-2: 트랙사이드 소품(drawProps) 제거 — 지면 레인의 진한 오브젝트는 전부
+    // 충돌 있는 장애물이어야 함(콘·표지판은 정식 장애물로 승격, 펜스는 미사용 보관)
     this.drawStation(ctx, now); // 정류장(노선 끝)
     this.drawBoss(ctx, now); // 플레이어 뒤에서 추격하는 박소장
 
@@ -843,30 +897,6 @@ export class GameEngine {
       }
     }
     ctx.restore();
-  }
-
-  // 트랙사이드 소품(AI 에셋): 펜스 패널·안전 콘·안전표지를 지면 위에 결정적 배치.
-  // 월드 x 기준 해시 → 종류·간격 변주. 게임플레이 요소보다 뒤에 그려 방해하지 않음.
-  private drawProps(ctx: CanvasRenderingContext2D) {
-    const SPACING = 640; // 평균 간격(px)
-    const first = Math.floor(this.bgScroll / SPACING);
-    for (let i = first; i <= first + Math.ceil(VIEW.W / SPACING) + 1; i++) {
-      const h1 = ((i * 2654435761) >>> 0) % 1000; // 결정적 해시
-      const jitter = (h1 % 320) - 160;
-      const wx = i * SPACING + jitter;
-      const x = wx - this.bgScroll;
-      if (x < -140 || x > VIEW.W + 40) continue;
-      // 정류장 근처(마지막 400px)는 비움
-      if (this.level && wx > this.lengthPx - 400) continue;
-      const gy = this.groundYAt(Math.max(0, Math.min(VIEW.W - 1, x)));
-      if (gy > VIEW.H) continue; // 구멍 위 배치 금지
-      const kind = h1 % 3;
-      const img = sprite(kind === 0 ? "fence_panel" : kind === 1 ? "cone" : "sign_safety");
-      if (!img) continue;
-      const dh = kind === 0 ? 48 : kind === 1 ? 26 : 58;
-      const dw = dh * (img.width / img.height);
-      ctx.drawImage(img, x - dw / 2, gy - dh, dw, dh);
-    }
   }
 
   // 정류장(노선 끝): 도착 = 완주. 쉼터(지붕·유리·벤치·표지판) + 완주 시 버스 정차 연출.
@@ -1053,10 +1083,10 @@ export class GameEngine {
 
     ctx.save();
 
-    // 클립: 경고(투척 준비) 중엔 throw(3프레임), 평시 run(6프레임 루프)
-    const warning = this.projectiles.find((p) => p.warning);
-    const frame = warning
-      ? clipFrame("parksojang", "throw", now - warning.spawnedAt)
+    // 클립: 투척 직후 0.6초는 throw(3프레임), 평시 run(6프레임 루프) — 투척 모션 유지(E3.8)
+    const throwing = this.projectiles.find((p) => now - p.spawnedAt < 600);
+    const frame = throwing
+      ? clipFrame("parksojang", "throw", now - throwing.spawnedAt)
       : clipFrame("parksojang", "run", now);
     const drawn = frame
       ? drawChar(ctx, "parksojang", frame, footX + shake, bossGy)
