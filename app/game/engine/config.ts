@@ -118,6 +118,19 @@ export const EDU = {
   BANNER_MS: 2000, // 구간 안내 배너 표시 시간
 } as const;
 
+// E4 주간 시즌 — 이벤트 시작일(KST 월요일) 기준 7일 단위 4라운드. 운영 일정 확정 시 교체.
+export const SEASON = {
+  // KST, 반드시 월요일. 시작일 이전의 기록은 라운드 창 밖이라 랭킹에 안 잡히므로
+  // 개발 중엔 이번 주 월요일로 두고, 운영 오픈 시 실제 이벤트 시작 월요일로 교체할 것.
+  EVENT_START: "2026-07-13",
+  ROUNDS: 4,
+  TOP_N: 50, // 랭킹 조회 상위 노출 수
+} as const;
+
+// E4-5 보상 정책 세이프 모드(법적 검토 반영): true면 성적 연동 포인트 표시·포인트 교환을 숨긴다.
+// 법무 결론에 따라 false로 되돌리면 기존 동작(예상 포인트 표시·포인트 교환 버튼) 복귀.
+export const REWARD_SAFE_MODE = true;
+
 // WP6 노선(스테이지) 진행
 export const ROUTE = {
   FINALE_START: 0.75, // 피날레 돌진 시작(진행도)

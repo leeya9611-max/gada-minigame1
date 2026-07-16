@@ -84,3 +84,58 @@ async function postToServer(result: NativeGameResult): Promise<void> {
     console.warn("[GAME_RESULT] 서버 콜백 실패(스펙 미확정)", e);
   }
 }
+
+// ── E4 주간 시즌 랭킹 (app/api/season 스텁 — 운영 서버 교체 시 경로만 유지) ──
+
+export interface SeasonEntry {
+  rank: number;
+  nickname: string;
+  weekScore: number;
+}
+export interface SeasonMe {
+  rank: number;
+  weekScore: number;
+  todayBest: number;
+}
+export interface SeasonBoard {
+  round: number;
+  endsAt: string; // ISO — 현재 라운드 종료 시각
+  entries: SeasonEntry[];
+  me: SeasonMe | null;
+}
+
+// 엔들리스 결과를 시즌 베스트 후보로 전달(sendResultToNative와 병행, 실패 무시)
+export async function postSeasonScore(result: NativeGameResult): Promise<void> {
+  if (result.mode !== "endless") return; // edu 점수는 랭킹 제외
+  try {
+    await fetch("/api/season", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: result.userId,
+        nickname: result.nickname,
+        score: result.rankScore,
+        mode: result.mode,
+      }),
+      keepalive: true,
+    });
+  } catch {
+    /* 랭킹 반영 실패는 게임 흐름에 영향 없음 */
+  }
+}
+
+// 주간 랭킹 조회 — 실패 시 null(호출부는 조용히 숨김)
+export async function fetchSeason(userId: string): Promise<SeasonBoard | null> {
+  try {
+    const res = await fetch(`/api/season?userId=${encodeURIComponent(userId)}`);
+    if (!res.ok) return null;
+    return (await res.json()) as SeasonBoard;
+  } catch {
+    return null;
+  }
+}
+
+// 라운드 종료까지 남은 일수(D-day 표기용, 최소 1)
+export function daysLeft(endsAt: string): number {
+  return Math.max(1, Math.ceil((Date.parse(endsAt) - Date.now()) / 86400_000));
+}

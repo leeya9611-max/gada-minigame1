@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GameEngine } from "./engine/GameEngine";
 import { loadSprites } from "./engine/sprites";
 import type { MapKey } from "./engine/Background";
-import { CHASE, ROUTES, VIEW } from "./engine/config";
+import { CHASE, REWARD_SAFE_MODE, ROUTES, VIEW } from "./engine/config";
 import { EDU_ROUTE_ID, loadLevel, type LevelData, type RouteId } from "./engine/level";
 import type { GameMode, GameResult, HudState } from "./engine/types";
 import { parseToken } from "@/lib/auth";
-import { requestNativeAction, sendResultToNative } from "@/lib/api";
-import type { NativeAction } from "@/lib/api";
+import { daysLeft, fetchSeason, postSeasonScore, requestNativeAction, sendResultToNative } from "@/lib/api";
+import type { NativeAction, SeasonBoard } from "@/lib/api";
 import { loadTickets, newSessionId, saveTickets } from "@/lib/tickets";
 import {
   addMeters,
@@ -63,6 +63,14 @@ export default function Game({ token }: { token?: string }) {
 
   // 유저 식별 (토큰 → userId). 닉네임은 userId에 귀속.
   const user = useMemo(() => parseToken(token), [token]);
+  // E4: 랭킹 페이지(토큰 없이 진입)가 같은 유저로 조회하도록 마지막 userId 보관
+  useEffect(() => {
+    try {
+      localStorage.setItem("yk_last_uid", user.userId);
+    } catch {
+      /* 프라이빗 모드 등 저장 불가 시 무시 */
+    }
+  }, [user.userId]);
 
   // 닉네임: 로컬 캐시 즉시 반영 → 서버 조회로 보정(기기 변경·캐시 삭제 대응)
   const [nickname, setNickname] = useState<string | null>(null);
@@ -119,6 +127,17 @@ export default function Game({ token }: { token?: string }) {
 
   const currentRouteRef = useRef<RouteId>("route1");
 
+  // E4: 주간 시즌 요약(로비 1줄 + D-day). 조회 실패 시 null → 조용히 숨김.
+  const [season, setSeason] = useState<SeasonBoard | null>(null);
+  useEffect(() => {
+    if (screen !== "lobby") return;
+    let alive = true;
+    void fetchSeason(user.userId).then((s) => alive && setSeason(s));
+    return () => {
+      alive = false;
+    };
+  }, [screen, user.userId]);
+
   // E2: 안전교육 이수 게이트 + 현재 플레이 모드(재도전 티켓 분기용)
   const [eduDone, setEduDone] = useState(false);
   useEffect(() => setEduDone(loadEduDone()), []);
@@ -139,12 +158,14 @@ export default function Game({ token }: { token?: string }) {
 
   const handleGameOver = useCallback((r: GameResult) => {
     setResult(r);
-    sendResultToNative({
+    const nativeResult = {
       ...r,
       sessionId: sessionRef.current,
       ticketUsed: r.mode === "edu" ? 0 : 1, // 안전교육은 티켓 미차감
       nickname: nicknameRef.current ?? "",
-    });
+    };
+    sendResultToNative(nativeResult);
+    void postSeasonScore(nativeResult); // E4: 엔들리스 결과를 주간 시즌 베스트 후보로 전달
     setTotalM(addMeters(engineRef.current?.distanceM ?? 0));
     if (r.outcome === "cleared") {
       if (r.mode === "edu") {
@@ -436,6 +457,7 @@ export default function Game({ token }: { token?: string }) {
             tickets={tickets}
             totalM={totalM}
             eduDone={eduDone}
+            season={season}
             onStartEdu={startEdu}
             onStartEndless={startEndless}
             loading={!spritesLoaded}
@@ -832,6 +854,7 @@ function LobbyScreen({
   tickets,
   totalM,
   eduDone,
+  season,
   onStartEdu,
   onStartEndless,
   loading,
@@ -840,6 +863,7 @@ function LobbyScreen({
   tickets: number;
   totalM: number;
   eduDone: boolean;
+  season: SeasonBoard | null;
   onStartEdu: () => void;
   onStartEndless: () => void;
   loading: boolean;
@@ -862,6 +886,24 @@ function LobbyScreen({
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>👷 {nickname ?? "김반장"}</div>
           <span style={{ fontSize: 12, color: "#8fa3c4" }}>누적 {totalM.toLocaleString()}m</span>
+          {/* E4: 이번 주 내 점수·순위 + D-day (조회 실패·기록 없음 시 숨김) */}
+          {season && (
+            <Link
+              href="/ranking"
+              style={{
+                fontSize: 12,
+                color: "#ffd23f",
+                textDecoration: "none",
+                background: "rgba(255,210,63,0.12)",
+                padding: "3px 10px",
+                borderRadius: 999,
+              }}
+            >
+              🏆 {season.round}R · D-{daysLeft(season.endsAt)}
+              {season.me &&
+                ` · 이번 주 ${season.me.weekScore.toLocaleString()}점 ${season.me.rank}위`}
+            </Link>
+          )}
         </div>
         <span
           style={{
@@ -1322,15 +1364,30 @@ function GameOverOverlay({
           <div style={resultLabel}>획득 코인</div>
           <div style={{ fontSize: 30, fontWeight: 800 }}>🟡 {result.coinCount}</div>
         </div>
-        <div style={resultCard}>
-          <div style={resultLabel}>예상 포인트*</div>
-          <div style={{ fontSize: 30, fontWeight: 800, color: "#8ee6d0" }}>
-            {expectedPoints.toLocaleString()}P
+        {/* E4-5 세이프 모드: 성적 연동 "예상 포인트" 대신 성적 무관 정액 안내 */}
+        {REWARD_SAFE_MODE ? (
+          <div style={resultCard}>
+            <div style={resultLabel}>참여 보상</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#8ee6d0", lineHeight: 1.4 }}>
+              🎁 오늘 참여 보상
+              <br />
+              지급 예정
+            </div>
           </div>
-        </div>
+        ) : (
+          <div style={resultCard}>
+            <div style={resultLabel}>예상 포인트*</div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: "#8ee6d0" }}>
+              {expectedPoints.toLocaleString()}P
+            </div>
+          </div>
+        )}
       </div>
       <div style={{ fontSize: 11, color: "#8fa3c4", marginBottom: 14 }}>
-        ⏱ {result.playDuration}초 · *교환비 확정 전 임시 환산, 지급은 앱에서 처리
+        ⏱ {result.playDuration}초 ·{" "}
+        {REWARD_SAFE_MODE
+          ? "참여 보상은 성적과 무관하게 앱에서 지급됩니다"
+          : "*교환비 확정 전 임시 환산, 지급은 앱에서 처리"}
       </div>
 
       <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 500 }}>
@@ -1370,10 +1427,13 @@ function ChargeOverlay({
           📺 광고 시청
           <span style={chargeSub}>+1 티켓</span>
         </button>
-        <button onClick={() => onCharge("exchangePointsForTicket")} style={chargeCard("#3c4a63")}>
-          💰 포인트 교환
-          <span style={chargeSub}>+1 티켓</span>
-        </button>
+        {/* E4-5 세이프 모드: 포인트 교환 숨김(코드 보관) — 플래그 해제 시 복귀 */}
+        {!REWARD_SAFE_MODE && (
+          <button onClick={() => onCharge("exchangePointsForTicket")} style={chargeCard("#3c4a63")}>
+            💰 포인트 교환
+            <span style={chargeSub}>+1 티켓</span>
+          </button>
+        )}
         <button onClick={() => onCharge("inviteFriend")} style={chargeCard("#37c871")}>
           👷 친구 초대
           <span style={chargeSub}>+1 티켓</span>

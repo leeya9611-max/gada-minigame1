@@ -1,58 +1,61 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { tierOf } from "./tier";
-import { requestNativeAction } from "@/lib/api";
+import { daysLeft, fetchSeason, requestNativeAction } from "@/lib/api";
+import type { SeasonBoard } from "@/lib/api";
+import { REWARD_SAFE_MODE } from "@/app/game/engine/config";
+import { parseToken } from "@/lib/auth";
 import { loadTickets, saveTickets } from "@/lib/tickets";
 
-type TabKey = "national" | "age" | "region";
+// E4: 주간 시즌 랭킹 보드 — 게임과 동일한 가로(landscape) 화면.
+// 데이터는 /api/season 스텁(운영 서버 교체 예정). 전국/연령/지역 탭 제거 → 주간 단일 보드.
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "national", label: "전국" },
-  { key: "age", label: "연령별" },
-  { key: "region", label: "지역별" },
-];
-
-interface RankRow {
-  rank: number;
-  name: string;
-  score: number;
-  me?: boolean;
+// 유저 식별: 딥링크 토큰(?token=) 우선, 없으면 게임이 저장한 마지막 userId
+function resolveUserId(token: string | null): string {
+  const fromToken = parseToken(token);
+  if (!fromToken.isGuest) return fromToken.userId;
+  try {
+    return localStorage.getItem("yk_last_uid") ?? fromToken.userId;
+  } catch {
+    return fromToken.userId;
+  }
 }
 
-// 목업 랭킹 데이터 (실제 데이터는 네이티브/서버 연동 시 교체).
-const MOCK: Record<TabKey, RankRow[]> = {
-  national: [
-    { rank: 1, name: "무재해_철근왕", score: 9820 },
-    { rank: 2, name: "칼퇴의신", score: 8710 },
-    { rank: 3, name: "안전제일김씨", score: 7430 },
-    { rank: 4, name: "야리끼리마스터", score: 6120 },
-    { rank: 5, name: "나(김반장)", score: 4180, me: true },
-    { rank: 6, name: "현장의지배자", score: 3990 },
-    { rank: 7, name: "도면요정", score: 2870 },
-  ],
-  age: [
-    { rank: 1, name: "30대_반장甲", score: 7650 },
-    { rank: 2, name: "나(김반장)", score: 4180, me: true },
-    { rank: 3, name: "청년소장", score: 3520 },
-    { rank: 4, name: "막내연장정리", score: 2010 },
-  ],
-  region: [
-    { rank: 1, name: "서울_타워크레인", score: 8120 },
-    { rank: 2, name: "판교_안전모", score: 5240 },
-    { rank: 3, name: "나(김반장)", score: 4180, me: true },
-    { rank: 4, name: "인천_레미콘", score: 3110 },
-  ],
-};
-
 export default function RankingPage() {
-  const [tab, setTab] = useState<TabKey>("national");
+  return (
+    <Suspense>
+      <RankingBoard />
+    </Suspense>
+  );
+}
+
+function RankingBoard() {
+  const token = useSearchParams().get("token");
+  const [board, setBoard] = useState<SeasonBoard | null | "loading">("loading");
   const [tickets, setTickets] = useState(0);
+  const [portrait, setPortrait] = useState(false);
+
   useEffect(() => setTickets(loadTickets()), []); // 게임과 동일 저장소 공유
-  const rows = MOCK[tab];
-  const me = useMemo(() => rows.find((r) => r.me), [rows]);
-  const myTier = tierOf(me?.score ?? 0);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchSeason(resolveUserId(token)).then((b) => alive && setBoard(b));
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  // 가로 화면 안내(게임과 동일 규칙)
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait)");
+    const update = () => setPortrait(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   // 티켓 충전 요청. 실제 지급/차감은 네이티브 앱 API 담당(웹은 요청+표시 스텁).
   const charge = (action: "watchAdForTicket" | "exchangePointsForTicket") => () => {
@@ -63,175 +66,299 @@ export default function RankingPage() {
       return next;
     });
   };
-  const watchAd = charge("watchAdForTicket");
-  const exchangePoints = charge("exchangePointsForTicket");
+
+  const me = board !== "loading" && board ? board.me : null;
+  const myTier = tierOf(me?.weekScore ?? 0);
+
+  if (portrait) return <RotateHint />;
 
   return (
     <main
       style={{
-        height: "100%",
+        height: "100dvh",
         display: "flex",
         justifyContent: "center",
+        alignItems: "stretch",
         background: "#0e1526",
+        color: "#fff",
+        overflow: "hidden",
       }}
     >
-      {/* 모바일 웹앱 프레임: 넓은 화면에서도 세로 모바일 폭으로 고정 */}
       <div
         style={{
           width: "100%",
-          maxWidth: 480,
-          height: "100%",
-          overflowY: "auto",
-          WebkitOverflowScrolling: "touch",
-          background: "linear-gradient(180deg, #1F2A44 0%, #0e1526 60%)",
-          color: "#fff",
-          padding: "20px 16px 32px",
-        }}
-      >
-      <header style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-        <Link href="/game" style={{ color: "#8fa3c4", fontSize: 22, textDecoration: "none" }}>
-          ‹
-        </Link>
-        <h1 style={{ fontSize: 22, fontWeight: 800 }}>랭킹 보드</h1>
-      </header>
-
-      {/* 내 티어 배지 카드 */}
-      <section
-        style={{
-          background: "rgba(255,255,255,0.06)",
-          borderRadius: 18,
-          padding: 18,
+          maxWidth: 900,
           display: "flex",
-          alignItems: "center",
           gap: 14,
-          marginBottom: 18,
+          padding: "14px 16px",
         }}
       >
-        <div
+        {/* ── 좌측 패널: 헤더 · 내 티어/주간 요약 · 티켓/충전 ── */}
+        <aside
           style={{
-            width: 60,
-            height: 60,
-            borderRadius: "50%",
-            background: myTier.color,
+            width: 264,
+            flexShrink: 0,
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 30,
+            flexDirection: "column",
+            gap: 10,
           }}
         >
-          {myTier.emoji}
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, color: "#8fa3c4" }}>내 티어</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: myTier.color }}>
-            {myTier.label}
-          </div>
-          <div style={{ fontSize: 13, color: "#cdd8ec" }}>
-            {me?.score.toLocaleString()}점
-          </div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 13, color: "#8fa3c4" }}>보유 티켓</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: "#ffd23f" }}>🎟 {tickets}</div>
-        </div>
-      </section>
+          <header style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Link href="/game" style={{ color: "#8fa3c4", fontSize: 24, textDecoration: "none" }}>
+              ‹
+            </Link>
+            <div>
+              <h1 style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>주간 랭킹</h1>
+              <div style={{ fontSize: 12, color: "#ffd23f", fontWeight: 700 }}>
+                {board !== "loading" && board
+                  ? `${board.round}라운드 · 종료까지 D-${daysLeft(board.endsAt)}`
+                  : " "}
+              </div>
+            </div>
+          </header>
 
-      {/* 탭 */}
-      <div
-        style={{
-          display: "flex",
-          background: "rgba(255,255,255,0.06)",
-          borderRadius: 999,
-          padding: 4,
-          marginBottom: 14,
-        }}
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
+          {/* 내 티어 배지 카드(유지) + 주간 요약 */}
+          <section style={panel}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: "50%",
+                  background: myTier.color,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 26,
+                  flexShrink: 0,
+                }}
+              >
+                {myTier.emoji}
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#8fa3c4" }}>내 티어</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: myTier.color }}>
+                  {myTier.label}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <div style={statBox}>
+                <div style={statLabel}>이번 주</div>
+                <div style={statValue}>{me ? me.weekScore.toLocaleString() : "–"}</div>
+              </div>
+              <div style={statBox}>
+                <div style={statLabel}>오늘 베스트</div>
+                <div style={statValue}>{me ? me.todayBest.toLocaleString() : "–"}</div>
+              </div>
+              <div style={statBox}>
+                <div style={statLabel}>순위</div>
+                <div style={{ ...statValue, color: "#ffd23f" }}>{me ? `${me.rank}위` : "–"}</div>
+              </div>
+            </div>
+          </section>
+
+          {/* 티켓 · 충전 */}
+          <section style={{ ...panel, marginTop: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>보유 티켓</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "#ffd23f" }}>🎟 {tickets}</div>
+            </div>
+            <div style={{ fontSize: 11, color: "#8fa3c4", margin: "4px 0 8px" }}>
+              지급은 앱에서 처리됩니다.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={charge("watchAdForTicket")} style={chargeBtn("#2E66F6")}>
+                📺 광고 시청 <span style={{ fontSize: 11, opacity: 0.8 }}>+1</span>
+              </button>
+              {/* E4-5 세이프 모드: 포인트 교환 숨김(코드 보관) — 플래그 해제 시 복귀 */}
+              {!REWARD_SAFE_MODE && (
+                <button onClick={charge("exchangePointsForTicket")} style={chargeBtn("#3c4a63")}>
+                  💰 포인트 교환 <span style={{ fontSize: 11, opacity: 0.8 }}>+1</span>
+                </button>
+              )}
+            </div>
+          </section>
+        </aside>
+
+        {/* ── 우측: 주간 순위 리스트(스크롤) + 내 순위 고정 행 ── */}
+        <section
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            background: "rgba(255,255,255,0.04)",
+            borderRadius: 16,
+            padding: "10px 12px",
+            minWidth: 0,
+          }}
+        >
+          <div style={{ display: "flex", fontSize: 11, color: "#8fa3c4", padding: "2px 10px 8px" }}>
+            <span style={{ width: 46 }}>순위</span>
+            <span style={{ flex: 1 }}>닉네임 · 주간 점수 = 일일 베스트 합산</span>
+            <span>주간 점수</span>
+          </div>
+
+          <ul
             style={{
+              listStyle: "none",
+              margin: 0,
+              padding: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
               flex: 1,
-              border: "none",
-              borderRadius: 999,
-              padding: "9px 0",
-              fontSize: 14,
-              fontWeight: 700,
-              background: tab === t.key ? "#2E66F6" : "transparent",
-              color: tab === t.key ? "#fff" : "#8fa3c4",
             }}
           >
-            {t.label}
-          </button>
-        ))}
-      </div>
+            {board === "loading" && (
+              <li style={{ color: "#8fa3c4", padding: 16, textAlign: "center" }}>불러오는 중…</li>
+            )}
+            {board !== "loading" && !board && (
+              <li style={{ color: "#8fa3c4", padding: 16, textAlign: "center" }}>
+                랭킹을 불러오지 못했습니다. 잠시 후 다시 열어주세요.
+              </li>
+            )}
+            {board !== "loading" && board && board.entries.length === 0 && (
+              <li style={{ color: "#8fa3c4", padding: 16, textAlign: "center", lineHeight: 1.7 }}>
+                이번 라운드 기록이 아직 없어요.
+                <br />
+                무한 잔업 모드에서 첫 기록을 남겨보세요! 🔥
+              </li>
+            )}
+            {board !== "loading" &&
+              board?.entries.map((r) => (
+                <RankRow
+                  key={r.rank}
+                  rank={r.rank}
+                  name={r.nickname}
+                  score={r.weekScore}
+                  me={me !== null && r.rank === me.rank}
+                />
+              ))}
+          </ul>
 
-      {/* 랭킹 리스트 */}
-      <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
-        {rows.map((r) => {
-          const t = tierOf(r.score);
-          return (
-            <li
-              key={r.rank}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "12px 14px",
-                borderRadius: 14,
-                background: r.me ? "rgba(46,102,246,0.22)" : "rgba(255,255,255,0.05)",
-                border: r.me ? "1px solid #2E66F6" : "1px solid transparent",
-              }}
-            >
-              <div style={{ width: 24, fontWeight: 800, color: r.rank <= 3 ? "#ffd23f" : "#8fa3c4" }}>
-                {r.rank}
-              </div>
-              <div style={{ fontSize: 20 }}>{t.emoji}</div>
-              <div style={{ flex: 1, fontWeight: r.me ? 800 : 600 }}>{r.name}</div>
-              <div style={{ fontWeight: 800, color: "#ffd23f" }}>{r.score.toLocaleString()}</div>
-            </li>
-          );
-        })}
-      </ul>
-
-      {/* 티켓 충전 선택 (광고 시청 / 포인트 교환) */}
-      <section
-        style={{
-          marginTop: 22,
-          background: "rgba(255,255,255,0.06)",
-          borderRadius: 18,
-          padding: 18,
-        }}
-      >
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>티켓이 부족한가요?</div>
-        <div style={{ fontSize: 13, color: "#8fa3c4", marginBottom: 14 }}>
-          지급은 앱에서 처리됩니다.
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={watchAd} style={chargeBtn("#2E66F6")}>
-            📺 광고 시청
-            <span style={{ display: "block", fontSize: 12, opacity: 0.8 }}>+1 티켓</span>
-          </button>
-          <button onClick={exchangePoints} style={chargeBtn("#3c4a63")}>
-            💰 포인트 교환
-            <span style={{ display: "block", fontSize: 12, opacity: 0.8 }}>+1 티켓</span>
-          </button>
-        </div>
-      </section>
+          {/* 내 순위 고정 행(목록 스크롤과 무관하게 하단 고정) */}
+          {me && (
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: 6, marginTop: 6 }}>
+              <RankRow rank={me.rank} name="나" score={me.weekScore} me pinned />
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );
 }
 
+function RankRow({
+  rank,
+  name,
+  score,
+  me,
+  pinned,
+}: {
+  rank: number;
+  name: string;
+  score: number;
+  me?: boolean;
+  pinned?: boolean;
+}) {
+  const t = tierOf(score);
+  return (
+    <li
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "9px 12px",
+        borderRadius: 12,
+        background: me ? "rgba(46,102,246,0.22)" : "rgba(255,255,255,0.05)",
+        border: me ? "1px solid #2E66F6" : "1px solid transparent",
+        listStyle: "none",
+      }}
+    >
+      <div style={{ width: 36, fontWeight: 800, color: rank <= 3 ? "#ffd23f" : "#8fa3c4" }}>
+        {rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : rank}
+      </div>
+      <div style={{ fontSize: 17 }}>{t.emoji}</div>
+      <div
+        style={{
+          flex: 1,
+          fontWeight: me ? 800 : 600,
+          fontSize: 14,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {name}
+        {pinned && <span style={{ fontSize: 11, color: "#8fa3c4", marginLeft: 6 }}>내 순위</span>}
+      </div>
+      <div style={{ fontWeight: 800, color: "#ffd23f", fontVariantNumeric: "tabular-nums" }}>
+        {score.toLocaleString()}
+      </div>
+    </li>
+  );
+}
+
+// 게임과 동일한 가로 화면 안내
+function RotateHint() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "#0e1526",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 18,
+        color: "#fff",
+        textAlign: "center",
+        padding: 24,
+      }}
+    >
+      <div style={{ fontSize: 54, animation: "rotateHintR 1.6s ease-in-out infinite" }}>📱</div>
+      <div style={{ fontSize: 20, fontWeight: 800 }}>가로로 돌려주세요</div>
+      <div style={{ fontSize: 14, color: "#9fb0cc", lineHeight: 1.6 }}>
+        주간 랭킹은 가로 화면에 최적화되어 있어요.
+      </div>
+      <style>{`@keyframes rotateHintR{0%,100%{transform:rotate(-12deg)}50%{transform:rotate(78deg)}}`}</style>
+    </div>
+  );
+}
+
+const panel: React.CSSProperties = {
+  background: "rgba(255,255,255,0.06)",
+  borderRadius: 16,
+  padding: 14,
+};
+
+const statBox: React.CSSProperties = {
+  flex: 1,
+  background: "rgba(0,0,0,0.25)",
+  borderRadius: 10,
+  padding: "7px 8px",
+  textAlign: "center",
+};
+const statLabel: React.CSSProperties = { fontSize: 10.5, color: "#8fa3c4" };
+const statValue: React.CSSProperties = {
+  fontSize: 15,
+  fontWeight: 800,
+  fontVariantNumeric: "tabular-nums",
+};
+
 function chargeBtn(bg: string): React.CSSProperties {
   return {
     flex: 1,
     border: "none",
-    borderRadius: 14,
-    padding: "14px 0",
+    borderRadius: 12,
+    padding: "10px 0",
     background: bg,
     color: "#fff",
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: 700,
   };
 }
