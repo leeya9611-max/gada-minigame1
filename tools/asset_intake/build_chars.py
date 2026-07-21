@@ -68,13 +68,17 @@ meta = {}
 
 # ── 김반장 ──
 gdir = os.path.join(DST, "gimbanjang_custom")
-run = load_frames("sheet_gimbanjang_run.png", 8, range(7))
+# 러닝 v2(2026-07-21): 6프레임 시트(프레임 ~1890px — 구 시트의 2배 해상도).
+# 구 세트(jump/fall 등, ~940px)와 캐릭터 크기가 맞도록 사전 정규화(1890→940 상당).
+V2_PRE = 940 / 1890
+run = [f.resize((round(f.width * V2_PRE), round(f.height * V2_PRE)), Image.LANCZOS)
+       for f in load_frames("sheet_gimbanjang_run_v2.png", 8, range(6))]
 actions = load_frames("sheet_gimbanjang_actions.png", 25, range(4))  # 점프/낙하/슬라이드/허트
 mixed = load_frames("sheet_gimbanjang_mixed.png", 8, [5, 6])  # 서류 idle / cheer
 idle = load_frames("sheet_gimbanjang_idle.png", 25, [0])
 
 g_uniform = run + [actions[0], actions[1]]
-g_names = [f"run{i+1}.png" for i in range(7)] + ["jump.png", "fall.png"]
+g_names = [f"run{i+1}.png" for i in range(6)] + ["jump.png", "fall.png"]
 meta["gimbanjang"] = build_uniform(g_uniform, g_names, gdir)
 meta["gimbanjang"]["realH"] = scaled(run[0]).height  # run1 알파 bbox 높이
 meta["gimbanjang"]["raw"] = [

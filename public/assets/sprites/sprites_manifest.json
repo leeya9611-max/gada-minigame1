@@ -4,7 +4,7 @@
     "anchor": { "x": 280, "baseline": "bottom" },
     "clips": {
       "run": {
-        "frames": ["run1.webp", "run2.webp", "run3.webp", "run4.webp", "run5.webp", "run6.webp", "run7.webp"],
+        "frames": ["run1.webp", "run2.webp", "run3.webp", "run4.webp", "run5.webp", "run6.webp"],
         "fps": 12,
         "loop": true
       },
