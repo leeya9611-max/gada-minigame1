@@ -73,6 +73,13 @@ export class Player {
     this.sliding = false;
   }
 
+  // E3.10-2: 일시정지 시간만큼 절대 시각 필드 이동(재개 시 연속성)
+  shiftClock(delta: number) {
+    this.invulnUntil += delta;
+    this.jumpStartAt += delta;
+    this.slideUntil += delta;
+  }
+
   isInvuln(now: number): boolean {
     return now < this.invulnUntil;
   }

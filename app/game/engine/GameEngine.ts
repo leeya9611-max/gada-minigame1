@@ -42,6 +42,14 @@ import type {
 function rand(min: number, max: number) {
   return min + Math.random() * (max - min);
 }
+
+// E3.11-1: 아이템 안내 문구(첫 등장 라벨 + 획득 플로팅 공용)
+const ITEM_LABEL: Record<ItemKind, string> = {
+  coffee: "안전모 +1",
+  heart: "안전모 +1",
+  booster: `${Math.round(ITEM_EFFECT.BOOSTER_MS / 1000)}초 무적 질주!`,
+  magnet: `${Math.round(ITEM_EFFECT.MAGNET_MS / 1000)}초 코인 자석`,
+};
 function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -112,6 +120,7 @@ export class GameEngine {
   private banner: string | null = null;
   private bannerUntil = 0;
   private eduSlowUntil = 0; // 신규 요소 직전 일시 감속(0.7배)
+  private eduHitNoted = false; // E3.13-2: 교육 첫 피격 안내 배너(판당 1회)
 
   private userId: string;
 
@@ -162,6 +171,7 @@ export class GameEngine {
     this.slowUntil = 0;
     this.magnetUntil = 0;
     this.gap = CHASE.START_GAP;
+    this.pausedAt = 0;
     this.dialogue = null;
     this.dialogueUntil = 0;
     this.markerIdx = 0;
@@ -169,6 +179,15 @@ export class GameEngine {
     this.banner = null;
     this.bannerUntil = 0;
     this.eduSlowUntil = 0;
+    this.eduHitNoted = false;
+  }
+
+  // E3.13-2: 교육 첫 피격 시 1회 안내 — HP 관용은 의도된 동작임을 알려줌(로직 불변)
+  private noteEduHit(now: number) {
+    if (this.mode !== "edu" || this.eduHitNoted) return;
+    this.eduHitNoted = true;
+    this.banner = "교육 중엔 안전모가 닳지 않아요 — 본게임에선 조심!";
+    this.bannerUntil = now + EDU.BANNER_MS;
   }
 
   // WP6: 노선 데이터 로드(맵 배경 포함). ready 상태에서 호출.
@@ -228,6 +247,7 @@ export class GameEngine {
 
   // 원터치 입력
   onTap() {
+    if (this.pausedAt) return; // 일시정지 중 입력 무시(E3.10-2)
     if (this.phase === "ready") {
       this.phase = "playing";
       this.startedAt = performance.now();
@@ -251,6 +271,7 @@ export class GameEngine {
 
   // 아래 입력(하단 홀드/아래 스와이프): 슬라이드
   slide() {
+    if (this.pausedAt) return; // 일시정지 중 입력 무시(E3.10-2)
     if (this.phase === "playing") this.player.slide(performance.now());
   }
 
@@ -278,11 +299,51 @@ export class GameEngine {
     const dt = Math.min(0.033, (ts - this.lastTs) / 1000);
     this.lastTs = ts;
 
-    if (this.phase === "playing") this.update(dt, ts);
-    this.render(ts);
+    // E3.10-2: 일시정지 — 업데이트·렌더 모두 중단(마지막 프레임 유지, UI가 오버레이 표시)
+    if (!this.pausedAt) {
+      if (this.phase === "playing") this.update(dt, ts);
+      this.render(ts);
+    }
 
     this.raf = requestAnimationFrame(this.loop);
   };
+
+  // ── E3.10-2: 일시정지/재개/포기 ──
+  private pausedAt = 0; // >0이면 일시정지 중(그 시각)
+
+  get paused(): boolean {
+    return this.pausedAt > 0;
+  }
+
+  pause() {
+    if (this.phase !== "playing" || this.pausedAt) return;
+    this.pausedAt = performance.now();
+  }
+
+  // 정지 시간만큼 모든 절대 시각 필드를 밀어 물리·타이머 연속성 유지
+  resume() {
+    if (!this.pausedAt) return;
+    const delta = performance.now() - this.pausedAt;
+    this.pausedAt = 0;
+    this.startedAt += delta;
+    this.slowUntil += delta;
+    this.boosterUntil += delta;
+    this.magnetUntil += delta;
+    this.dialogueUntil += delta;
+    this.bannerUntil += delta;
+    this.eduSlowUntil += delta;
+    this.player.shiftClock(delta);
+    for (const p of this.projectiles) p.shiftClock(delta);
+    for (const f of this.fallers) f.shiftClock(delta);
+    this.lastTs = performance.now();
+  }
+
+  // 포기: 엔들리스는 현재 기록으로 정상 종료(결과 전달). 교육·노선은 호출부가 로비 복귀 처리.
+  giveUp() {
+    if (this.phase !== "playing") return;
+    this.pausedAt = 0;
+    this.gameOver(performance.now(), "giveup");
+  }
 
   private update(dt: number, now: number) {
     this.elapsed = (now - this.startedAt) / 1000;
@@ -386,7 +447,10 @@ export class GameEngine {
     // E3: 교육 모드는 낙하도 HP 미감소(연출·페널티는 유지) — 실패 없이 완주
     const hpBefore = this.player.hp;
     this.player.hit(now);
-    if (this.mode === "edu") this.player.hp = hpBefore;
+    if (this.mode === "edu") {
+      this.player.hp = hpBefore;
+      this.noteEduHit(now);
+    }
     this.hits++;
     this.gap -= CHASE.HIT_LOSS;
     this.slowUntil = now + SPEED.SLOW_MS;
@@ -422,6 +486,17 @@ export class GameEngine {
   private spawnEndless(dtMs: number) {
     this.tObstacle -= dtMs;
     if (this.tObstacle <= 0) {
+      // E3.10-5: 스폰 지점 근처에 코인 줄이 있으면 장애물 스폰 보류(수평 간격 보장).
+      // 두 엔티티는 같은 속도로 스크롤하므로 스폰 시 간격이 이후에도 유지된다.
+      const spawnZoneX = VIEW.W + 40;
+      if (
+        this.coins.some(
+          (c) => !c.dead && c.x > spawnZoneX - SPAWN.COIN_OBSTACLE_GAP - 20
+        )
+      ) {
+        this.tObstacle = 120;
+        return;
+      }
       // 점프형(puddle/stack) 위주 + 슬라이드형(lowbar) + 콘·표지판 낮은 빈도(E3.8-2)
       // E3.9-5: 2단층 fence는 중반(FENCE_FROM_S)부터 풀에 합류
       const r = Math.random();
@@ -451,23 +526,32 @@ export class GameEngine {
 
     this.tCoin -= dtMs;
     if (this.tCoin <= 0) {
-      // 점프 궤적 높이에 배치(지면~점프 정점 사이).
-      // E3.7-8 도달성: E3.6 물리(1단 발 130px·머리 ~226px) 기준 상한 160px — 1단 점프로 전부 획득 가능.
-      // route_edu.json 최고 코인은 slot3(중심 111px)로 동일 상한 내(레벨 수정 불필요, 검증 완료).
-      const y = GROUND_Y - rand(24, SPAWN.COIN_MAX_H);
+      // E3.10-5: 코인 줄이 장애물과 수평으로 겹치지 않게 스폰 보류(안전 경로 보장)
       const streak = Math.floor(rand(1, 4));
-      for (let i = 0; i < streak; i++) {
-        const c = new Coin(y);
-        c.x += i * 34;
-        this.coins.push(c);
+      const spanFrom = VIEW.W + 30 - SPAWN.COIN_OBSTACLE_GAP;
+      const spanTo = VIEW.W + 30 + (streak - 1) * 34 + SPAWN.COIN_OBSTACLE_GAP;
+      const clash = this.obstacles.some(
+        (o) => !o.dead && o.box.x + o.box.w > spanFrom && o.box.x < spanTo
+      );
+      if (clash) {
+        this.tCoin = 150;
+      } else {
+        // 점프 궤적 높이에 배치(지면~점프 정점 사이).
+        // E3.7-8 도달성: E3.6 물리(1단 발 130px·머리 ~226px) 기준 상한 160px — 1단 점프로 전부 획득 가능.
+        const y = GROUND_Y - rand(24, SPAWN.COIN_MAX_H);
+        for (let i = 0; i < streak; i++) {
+          const c = new Coin(y);
+          c.x += i * 34;
+          this.coins.push(c);
+        }
+        this.tCoin = rand(SPAWN.COIN_MIN_MS, SPAWN.COIN_MAX_MS);
       }
-      this.tCoin = rand(SPAWN.COIN_MIN_MS, SPAWN.COIN_MAX_MS);
     }
 
     this.tItem -= dtMs;
     if (this.tItem <= 0) {
       const kind: ItemKind = Math.random() < 0.5 ? "coffee" : "booster";
-      this.items.push(new Item(kind, GROUND_Y - rand(30, 140)));
+      this.items.push(new Item(kind, GROUND_Y - rand(30, 140), this.itemHintLabel(kind)));
       this.tItem = rand(SPAWN.ITEM_MIN_MS, SPAWN.ITEM_MAX_MS);
     }
   }
@@ -534,7 +618,7 @@ export class GameEngine {
         case "magnet": {
           const kind =
             o.type === "dash" ? "booster" : o.type === "heart" ? "heart" : o.type;
-          const it = new Item(kind, airY);
+          const it = new Item(kind, airY, this.itemHintLabel(kind));
           it.x = screenX;
           this.items.push(it);
           break;
@@ -575,6 +659,20 @@ export class GameEngine {
     }
     const idxScale = 1 / (1 + ((this.level?.index ?? 1) - 1) * ROUTE.INDEX_SPEED_STEP);
     this.tProjectile = this.nextThrowDelay() * idxScale;
+  }
+
+  // E3.11-1: 아이템 첫 등장 안내 — 종류별 노출 횟수를 기기(localStorage)에 저장, 2회까지만
+  private itemHintLabel(kind: ItemKind): string | null {
+    const text = ITEM_LABEL[kind];
+    try {
+      const key = `yarikkiri.itemHint.${kind}`;
+      const n = Number(window.localStorage.getItem(key) ?? 0);
+      if (n >= 2) return null;
+      window.localStorage.setItem(key, String(n + 1));
+      return text;
+    } catch {
+      return text; // 저장 불가 환경(시뮬·프라이빗 모드)은 항상 표시
+    }
   }
 
   // 낙하 투척물 1개 생성 — 박소장 손에서 포물선으로 targetX 지면에 낙하
@@ -638,7 +736,10 @@ export class GameEngine {
     const applyHit = (): boolean => {
       const hpBefore = this.player.hp;
       if (invincible || !this.player.hit(now)) return false;
-      if (this.mode === "edu") this.player.hp = hpBefore;
+      if (this.mode === "edu") {
+        this.player.hp = hpBefore;
+        this.noteEduHit(now);
+      }
       this.hits++;
       this.slowUntil = now + SPEED.SLOW_MS;
       this.gap -= CHASE.HIT_LOSS; // 피격 시 박소장이 확 접근
@@ -689,19 +790,14 @@ export class GameEngine {
       if (intersects(pbox, it.box)) {
         if (it.kind === "booster") {
           this.boosterUntil = now + ITEM_EFFECT.BOOSTER_MS;
-          this.say(this.pickLine(DIALOGUE.booster), now);
+          this.say(`⚡ ${ITEM_LABEL.booster}`, now, 1400); // E3.11-1: 획득 플로팅(안내 문구 공용)
         } else if (it.kind === "magnet") {
           this.magnetUntil = now + ITEM_EFFECT.MAGNET_MS;
-          this.say("김반장: 코인이 달라붙는다!", now);
+          this.say(`🧲 ${ITEM_LABEL.magnet}`, now, 1400);
         } else {
           // 커피/하트: 감속 없이 HP 회복. 최대면 코인으로 대체(기획 5.6).
           if (this.player.heal(ITEM_EFFECT.COFFEE_HEAL)) {
-            this.say(
-              it.kind === "heart"
-                ? "김반장: 안전모 회복!"
-                : this.pickLine(DIALOGUE.coffee),
-              now
-            );
+            this.say(`🪖 ${ITEM_LABEL[it.kind]}`, now, 1400);
           } else {
             this.score.addCoin(ITEM_EFFECT.COFFEE_FULL_COINS);
             this.say("김반장: 안전모 꽉 찼다! (+코인)", now);
@@ -791,12 +887,14 @@ export class GameEngine {
     // E3.8-2: 트랙사이드 소품(drawProps) 제거 — 지면 레인의 진한 오브젝트는 전부
     // 충돌 있는 장애물이어야 함(콘·표지판은 정식 장애물로 승격, 펜스는 미사용 보관)
     this.drawStation(ctx, now); // 정류장(노선 끝)
-    this.drawBoss(ctx, now); // 플레이어 뒤에서 추격하는 박소장
 
+    // E3.10-7: z순서 — 장애물·코인·아이템·낙하물은 캐릭터(박소장·김반장)보다 항상 뒤
     for (const o of this.obstacles) o.draw(ctx, now);
     for (const c of this.coins) c.draw(ctx, now);
     for (const it of this.items) it.draw(ctx, now);
     for (const f of this.fallers) f.draw(ctx, now);
+
+    this.drawBoss(ctx, now); // 플레이어 뒤에서 추격하는 박소장
 
     // 부스터 무적 오라
     if (now < this.boosterUntil) {

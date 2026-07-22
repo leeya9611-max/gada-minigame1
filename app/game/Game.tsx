@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GameEngine } from "./engine/GameEngine";
 import { loadSprites } from "./engine/sprites";
 import type { MapKey } from "./engine/Background";
-import { CHASE, REWARD_SAFE_MODE, ROUTES, VIEW } from "./engine/config";
+import { CHASE, REWARD_SAFE_MODE, ROUTES, SCORE, VIEW } from "./engine/config";
 import { EDU_ROUTE_ID, loadLevel, type LevelData, type RouteId } from "./engine/level";
 import type { GameMode, GameResult, HudState } from "./engine/types";
 import { parseToken } from "@/lib/auth";
@@ -142,6 +142,50 @@ export default function Game({ token }: { token?: string }) {
   const [eduDone, setEduDone] = useState(false);
   useEffect(() => setEduDone(loadEduDone()), []);
   const currentModeRef = useRef<GameMode>("route");
+
+  // E3.10-2: 일시정지 — 버튼/백그라운드 전환 시. 포기는 모드별 분기.
+  const [paused, setPaused] = useState(false);
+  const pauseGame = useCallback(() => {
+    engineRef.current?.pause();
+    setPaused(true);
+  }, []);
+  const resumeGame = useCallback(() => {
+    engineRef.current?.resume();
+    setPaused(false);
+  }, []);
+  const giveUpGame = useCallback(() => {
+    const eng = engineRef.current;
+    if (!eng) return;
+    setPaused(false);
+    if (currentModeRef.current === "endless") {
+      // 엔들리스: 현재 기록으로 정상 종료 → 결과 전달(handleGameOver 경유)
+      eng.giveUp();
+    } else {
+      // 안전교육·노선: 저장 없이 로비 복귀
+      eng.backToReady();
+      setResult(null);
+      setScreen("lobby");
+    }
+  }, []);
+  // 탭 전환·백그라운드 진입 시 자동 일시정지
+  const pausedRef = useRef(false);
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
+  const hudPhaseRef = useRef(hud.phase);
+  useEffect(() => {
+    hudPhaseRef.current = hud.phase;
+  }, [hud.phase]);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden && hudPhaseRef.current === "playing" && !pausedRef.current) {
+        engineRef.current?.pause();
+        setPaused(true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
   // 방금 이수 완료(첫 이수 연출용)
   const [justUnlocked, setJustUnlocked] = useState(false);
 
@@ -424,6 +468,35 @@ export default function Game({ token }: { token?: string }) {
             {hud.banner && <SectionBanner text={hud.banner} />}
             {hud.dialogue && <DialogueBubble text={hud.dialogue} />}
             <ControlHints />
+            {/* E3.10-2: 일시정지 — 우상단 모서리 고정, 점프 입력과 분리(stopPropagation) */}
+            {!paused && (
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={pauseGame}
+                aria-label="일시정지"
+                style={{
+                  ...hudPanel,
+                  position: "absolute",
+                  top: 12,
+                  right: 14,
+                  border: "none",
+                  color: "#fff",
+                  fontSize: 20,
+                  lineHeight: 1,
+                  padding: "14px 13px",
+                  cursor: "pointer",
+                }}
+              >
+                ⏸
+              </button>
+            )}
+            {paused && (
+              <PauseOverlay
+                mode={currentModeRef.current}
+                onResume={resumeGame}
+                onGiveUp={giveUpGame}
+              />
+            )}
           </>
         )}
 
@@ -1031,11 +1104,16 @@ function TopHud({ hud }: { hud: HudState }) {
     >
       {/* E3.7-6: HUD 가독성 — 반투명 다크 패널로 배경과 분리 */}
       <div>
-        <div style={{ ...hudPanel, display: "flex", gap: 4, marginBottom: 6 }}>
+        {/* E3.10-4: HP 표시 확대 — 코인 카운터(우측 패널)와 동급의 시각 크기 */}
+        <div style={{ ...hudPanel, display: "flex", gap: 6, marginBottom: 6, padding: "6px 12px" }}>
           {[0, 1, 2].map((i) => (
             <span
               key={i}
-              style={{ fontSize: 18, filter: i < hud.hp ? "none" : "grayscale(1) opacity(0.35)" }}
+              style={{
+                fontSize: 26,
+                lineHeight: 1,
+                filter: i < hud.hp ? "none" : "grayscale(1) opacity(0.35)",
+              }}
             >
               🪖
             </span>
@@ -1047,7 +1125,15 @@ function TopHud({ hud }: { hud: HudState }) {
           {hud.slowActive && <Badge color="#e63946">🐢 피격 감속</Badge>}
         </div>
       </div>
-      <div style={{ ...hudPanel, textAlign: "right", textShadow: "0 1px 3px rgba(0,0,0,.4)" }}>
+      {/* E3.10: 점수·코인 패널 — 우상단 모서리의 일시정지 버튼 왼쪽에 배치 */}
+      <div
+        style={{
+          ...hudPanel,
+          textAlign: "right",
+          textShadow: "0 1px 3px rgba(0,0,0,.4)",
+          marginRight: 52,
+        }}
+      >
         <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1 }}>
           {hud.score.toLocaleString()}
         </div>
@@ -1251,55 +1337,70 @@ function ClearOverlay({
 }) {
   return (
     <div style={overlayStyle} onPointerDown={(e) => e.stopPropagation()}>
-      {/* 완주 성공 연출: 환호하는 김반장 (AI 시트 mixed cheer) */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/assets/sprites/gimbanjang_custom/cheer.webp"
-        alt=""
-        aria-hidden
-        draggable={false}
-        style={{
-          height: 96,
-          width: "auto",
-          marginBottom: 6,
-          animation: "starPop 0.5s cubic-bezier(.34,1.56,.64,1) both",
-          filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))",
-        }}
-      />
-      <div style={{ fontSize: 28, fontWeight: 800, color: "#ffd23f" }}>🦺 안전교육 이수!</div>
+      {/* E3.11-2: 캐릭터는 타이틀 옆 배치, 낮은 뷰포트(≤430px)에선 숨김 */}
       <div
         style={{
-          fontSize: justUnlocked ? 20 : 14,
-          fontWeight: 800,
-          color: justUnlocked ? "#8ee6d0" : "#cdd8ec",
-          margin: "6px 0 14px",
-          animation: justUnlocked ? "starPop 0.6s 0.3s cubic-bezier(.34,1.56,.64,1) both" : "none",
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          marginBottom: "clamp(6px, 1.6vh, 14px)",
         }}
       >
-        {justUnlocked ? "🔓 무한 잔업 모드 개방!" : "박소장을 따돌리고 무사 퇴근했습니다"}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className="ovl-char"
+          src="/assets/sprites/gimbanjang_custom/cheer.webp"
+          alt=""
+          aria-hidden
+          draggable={false}
+          style={{
+            height: "clamp(56px, 16vh, 96px)",
+            width: "auto",
+            animation: "starPop 0.5s cubic-bezier(.34,1.56,.64,1) both",
+            filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))",
+          }}
+        />
+        <div style={{ textAlign: "left" }}>
+          <div style={{ fontSize: "clamp(20px, 5.5vh, 28px)", fontWeight: 800, color: "#ffd23f" }}>
+            🦺 안전교육 이수!
+          </div>
+          <div
+            style={{
+              fontSize: justUnlocked ? "clamp(15px, 4vh, 20px)" : 14,
+              fontWeight: 800,
+              color: justUnlocked ? "#8ee6d0" : "#cdd8ec",
+              marginTop: 4,
+              animation: justUnlocked ? "starPop 0.6s 0.3s cubic-bezier(.34,1.56,.64,1) both" : "none",
+            }}
+          >
+            {justUnlocked ? "🔓 무한 잔업 모드 개방!" : "박소장을 따돌리고 무사 퇴근했습니다"}
+          </div>
+        </div>
       </div>
+      <style>{`@media (max-height: 430px){ .ovl-char{ display: none } }`}</style>
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: "clamp(6px, 1.5vw, 10px)", marginBottom: "clamp(6px, 1.6vh, 14px)", width: "100%", maxWidth: 520, justifyContent: "center" }}>
         <div style={resultCard}>
           <div style={resultLabel}>기록</div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: "#8ee6d0" }}>
+          <div style={{ fontSize: "clamp(18px, 4.8vh, 26px)", fontWeight: 800, color: "#8ee6d0" }}>
             {result.playDuration}s
           </div>
         </div>
         <div style={resultCard}>
           <div style={resultLabel}>코인</div>
-          <div style={{ fontSize: 26, fontWeight: 800 }}>
+          <div style={{ fontSize: "clamp(18px, 4.8vh, 26px)", fontWeight: 800 }}>
             🟡 {result.coinCount}
           </div>
         </div>
+        {/* 교육 클리어는 점수 내역 대신 조작 이수 표기 유지(E3.11-3) */}
         <div style={resultCard}>
           <div style={resultLabel}>조작 이수</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "#8ee6d0", lineHeight: 1.5 }}>
+          <div style={{ fontSize: "clamp(13px, 3.6vh, 20px)", fontWeight: 800, color: "#8ee6d0", lineHeight: 1.5 }}>
             점프 ✓<br />슬라이드 ✓<br />회피 ✓
           </div>
         </div>
       </div>
-      <div style={{ fontSize: 12, color: "#8fa3c4", marginBottom: 14 }}>
+      <div style={{ fontSize: 12, color: "#8fa3c4", marginBottom: "clamp(6px, 1.6vh, 14px)", textAlign: "center" }}>
         점프·슬라이드·회피 — 3가지 조작 이수! 이제 랭킹전에서 오래 버텨보세요 · 🎟 {tickets}
       </div>
 
@@ -1343,47 +1444,68 @@ function GameOverOverlay({
 
   return (
     <div style={overlayStyle} onPointerDown={(e) => e.stopPropagation()}>
-      <div style={{ fontSize: 24, fontWeight: 800 }}>
-        {result.outcome === "caught" ? "덜미 잡힘!" : "퇴근 실패!"}
+      <div style={{ fontSize: "clamp(18px, 5vh, 24px)", fontWeight: 800 }}>
+        {result.outcome === "caught"
+          ? "덜미 잡힘!"
+          : result.outcome === "giveup"
+            ? "오늘은 여기까지!"
+            : "퇴근 실패!"}
       </div>
       <div style={{ color: "#cdd8ec", fontSize: 13, marginBottom: 12 }}>
         {result.outcome === "caught"
           ? "박소장에게 붙잡혔습니다… 잔업 확정"
-          : "안전모가 다 벗겨졌습니다…"}{" "}
+          : result.outcome === "giveup"
+            ? "현재 기록으로 마감했습니다"
+            : "안전모가 다 벗겨졌습니다…"}{" "}
         · 🎟 {tickets}
       </div>
 
-      <div style={{ display: "flex", gap: 10, alignItems: "stretch", marginBottom: 14 }}>
+      {/* E3.11-3: 점수 내역 분리 표기 — 코인 가치 가시화 */}
+      <div
+        style={{
+          display: "flex",
+          gap: "clamp(6px, 1.5vw, 10px)",
+          alignItems: "stretch",
+          marginBottom: "clamp(6px, 1.6vh, 14px)",
+          width: "100%",
+          maxWidth: 520,
+          justifyContent: "center",
+        }}
+      >
         <div style={resultCard}>
           <div style={resultLabel}>랭킹 점수</div>
-          <div style={{ fontSize: 30, fontWeight: 800, color: "#ffd23f" }}>
+          <div style={{ fontSize: "clamp(20px, 5.4vh, 30px)", fontWeight: 800, color: "#ffd23f" }}>
             {result.rankScore.toLocaleString()}
           </div>
         </div>
         <div style={resultCard}>
-          <div style={resultLabel}>획득 코인</div>
-          <div style={{ fontSize: 30, fontWeight: 800 }}>🟡 {result.coinCount}</div>
+          <div style={resultLabel}>코인 → 점수</div>
+          <div style={{ fontSize: "clamp(14px, 3.8vh, 20px)", fontWeight: 800 }}>
+            🟡 {result.coinCount}개
+            <div style={{ color: "#ffd23f" }}>+{(result.coinCount * SCORE.COIN_VALUE).toLocaleString()}점</div>
+          </div>
         </div>
-        {/* E4-5 세이프 모드: 성적 연동 "예상 포인트" 대신 성적 무관 정액 안내 */}
+        {/* E4-5 세이프 모드: 성적 연동 "예상 포인트" 대신 주행 내역 표기 */}
         {REWARD_SAFE_MODE ? (
           <div style={resultCard}>
-            <div style={resultLabel}>참여 보상</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#8ee6d0", lineHeight: 1.4 }}>
-              🎁 오늘 참여 보상
-              <br />
-              지급 예정
+            <div style={resultLabel}>주행 거리 → 점수</div>
+            <div style={{ fontSize: "clamp(14px, 3.8vh, 20px)", fontWeight: 800 }}>
+              🏃 {result.playDuration}s
+              <div style={{ color: "#8ee6d0" }}>
+                +{Math.max(0, result.rankScore - result.coinCount * SCORE.COIN_VALUE).toLocaleString()}점
+              </div>
             </div>
           </div>
         ) : (
           <div style={resultCard}>
             <div style={resultLabel}>예상 포인트*</div>
-            <div style={{ fontSize: 30, fontWeight: 800, color: "#8ee6d0" }}>
+            <div style={{ fontSize: "clamp(20px, 5.4vh, 30px)", fontWeight: 800, color: "#8ee6d0" }}>
               {expectedPoints.toLocaleString()}P
             </div>
           </div>
         )}
       </div>
-      <div style={{ fontSize: 11, color: "#8fa3c4", marginBottom: 14 }}>
+      <div style={{ fontSize: 11, color: "#8fa3c4", marginBottom: "clamp(6px, 1.6vh, 14px)", textAlign: "center" }}>
         ⏱ {result.playDuration}초 ·{" "}
         {REWARD_SAFE_MODE
           ? "참여 보상은 성적과 무관하게 앱에서 지급됩니다"
@@ -1403,6 +1525,39 @@ function GameOverOverlay({
         <Link href="/ranking" style={{ ...secondaryBtn, flex: 1, textDecoration: "none" }}>
           랭킹
         </Link>
+      </div>
+    </div>
+  );
+}
+
+// ── E3.10-2: 일시정지 오버레이 ──
+function PauseOverlay({
+  mode,
+  onResume,
+  onGiveUp,
+}: {
+  mode: GameMode;
+  onResume: () => void;
+  onGiveUp: () => void;
+}) {
+  return (
+    <div
+      style={{ ...overlayStyle, background: "rgba(14,21,38,0.82)", zIndex: 40 }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 4 }}>⏸ 일시정지</div>
+      <div style={{ color: "#8fa3c4", fontSize: 13, marginBottom: 18 }}>
+        {mode === "endless"
+          ? "포기하면 현재 기록으로 마감돼요"
+          : "포기하면 저장 없이 로비로 돌아가요"}
+      </div>
+      <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 420 }}>
+        <button onClick={onResume} style={{ ...primaryBtn, flex: 1.4, marginBottom: 0 }}>
+          ▶ 계속하기
+        </button>
+        <button onClick={onGiveUp} style={{ ...secondaryBtn, flex: 1 }}>
+          {mode === "endless" ? "포기 (기록 저장)" : "포기"}
+        </button>
       </div>
     </div>
   );
@@ -1481,6 +1636,8 @@ const hudPanel: React.CSSProperties = {
   padding: "5px 10px",
 };
 
+// E3.11-2: 반응형 — 작은 뷰포트(모바일 가로)에서도 버튼이 잘리지 않게
+// clamp 기반 여백 + 세로 스크롤 허용 + iOS safe-area 인셋 반영
 const overlayStyle: React.CSSProperties = {
   position: "absolute",
   inset: 0,
@@ -1490,7 +1647,10 @@ const overlayStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   color: "#fff",
-  padding: 28,
+  padding:
+    "max(clamp(8px, 2.5vh, 28px), env(safe-area-inset-top)) max(clamp(10px, 3vw, 28px), env(safe-area-inset-right)) max(clamp(8px, 2.5vh, 28px), env(safe-area-inset-bottom)) max(clamp(10px, 3vw, 28px), env(safe-area-inset-left))",
+  overflowY: "auto",
+  WebkitOverflowScrolling: "touch",
 };
 
 const primaryBtn: React.CSSProperties = {
@@ -1517,12 +1677,15 @@ const secondaryBtn: React.CSSProperties = {
   cursor: "pointer",
 };
 
+// E3.11-2: 좁은 화면에서 축소되되 3개 가로 배열 유지
 const resultCard: React.CSSProperties = {
   background: "rgba(255,255,255,0.08)",
   borderRadius: 14,
-  padding: "12px 18px",
+  padding: "clamp(6px, 2vh, 12px) clamp(8px, 2.2vw, 18px)",
   textAlign: "center",
-  minWidth: 110,
+  minWidth: 0,
+  flex: 1,
+  maxWidth: 170,
 };
 
 const resultLabel: React.CSSProperties = {

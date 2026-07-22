@@ -37,6 +37,24 @@ def load_frames(sheet, dilate, indices):
     im, boxes = components(os.path.join(SRC, sheet), dilate=dilate)
     return [largest_comp_crop(im, boxes[i]) for i in indices]
 
+def strip_ground_shadow(im, band=0.15):
+    """프레임 하단 밴드의 회색 접지 그림자 제거(저채도·중명도 픽셀 alpha=0).
+    부츠(어두움)·바지(저명도)와 구분: lum>0.5 & sat<0.2만 제거."""
+    a = np.array(im)
+    h = a.shape[0]
+    band_from = int(h * (1 - band))
+    r, g, b = a[band_from:, :, 0]/255., a[band_from:, :, 1]/255., a[band_from:, :, 2]/255.
+    mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
+    sat = np.where(mx > 0, (mx - mn)/np.maximum(mx, 1e-6), 0)
+    lum = 0.2126*r + 0.7152*g + 0.0722*b
+    kill = (sat < 0.2) & (lum > 0.5)
+    a[band_from:, :, 3][kill] = 0
+    out = Image.fromarray(a)
+    # 재트림(그림자 제거로 bbox 변동)
+    al = np.array(out)[:, :, 3] > 16
+    ys, xs = np.where(al)
+    return out.crop((xs.min(), ys.min(), xs.max()+1, ys.max()+1))
+
 def scaled(img):
     w, h = img.size
     return img.resize((max(1, round(w * SCALE)), max(1, round(h * SCALE))), Image.LANCZOS)
@@ -64,39 +82,50 @@ def build_raw(frame, name, outdir):
     save_img(f, os.path.join(outdir, name))
     return {"name": name, "w": f.width, "h": f.height}
 
-meta = {}
+def main():
+    meta = {}
 
-# ── 김반장 ──
-gdir = os.path.join(DST, "gimbanjang_custom")
-# 러닝 v2(2026-07-21): 6프레임 시트(프레임 ~1890px — 구 시트의 2배 해상도).
-# 구 세트(jump/fall 등, ~940px)와 캐릭터 크기가 맞도록 사전 정규화(1890→940 상당).
-V2_PRE = 940 / 1890
-run = [f.resize((round(f.width * V2_PRE), round(f.height * V2_PRE)), Image.LANCZOS)
-       for f in load_frames("sheet_gimbanjang_run_v2.png", 8, range(6))]
-actions = load_frames("sheet_gimbanjang_actions.png", 25, range(4))  # 점프/낙하/슬라이드/허트
-mixed = load_frames("sheet_gimbanjang_mixed.png", 8, [5, 6])  # 서류 idle / cheer
-idle = load_frames("sheet_gimbanjang_idle.png", 25, [0])
+    # ── 김반장 ──
+    gdir = os.path.join(DST, "gimbanjang_custom")
+    # 러닝 v2(2026-07-21): 6프레임 시트(프레임 ~1890px — 구 시트의 2배 해상도).
+    # 구 세트(jump/fall 등, ~940px)와 캐릭터 크기가 맞도록 사전 정규화(1890→940 상당).
+    V2_PRE = 940 / 1890
+    run = [f.resize((round(f.width * V2_PRE), round(f.height * V2_PRE)), Image.LANCZOS)
+           for f in load_frames("sheet_gimbanjang_run_v2.png", 8, range(6))]
+    actions = load_frames("sheet_gimbanjang_actions.png", 25, range(4))  # 점프/낙하/슬라이드/허트
+    # E3.10-1: 구 액션 시트 캐릭터가 v2 러닝보다 8% 큼(헬멧 면적 실측) → 통일 정규화
+    ACTIONS_NORM = 1 / 1.08
+    actions = [f.resize((round(f.width*ACTIONS_NORM), round(f.height*ACTIONS_NORM)), Image.LANCZOS) for f in actions]
+    mixed = load_frames("sheet_gimbanjang_mixed.png", 8, [5, 6])  # 서류 idle / cheer
+    idle = load_frames("sheet_gimbanjang_idle.png", 25, [0])
 
-g_uniform = run + [actions[0], actions[1]]
-g_names = [f"run{i+1}.png" for i in range(6)] + ["jump.png", "fall.png"]
-meta["gimbanjang"] = build_uniform(g_uniform, g_names, gdir)
-meta["gimbanjang"]["realH"] = scaled(run[0]).height  # run1 알파 bbox 높이
-meta["gimbanjang"]["raw"] = [
-    build_raw(actions[2], "slide.png", gdir),
-    build_raw(actions[3], "hurt.png", gdir),
-    build_raw(idle[0], "idle.png", gdir),
-    build_raw(mixed[0], "idle_docs.png", gdir),
-    build_raw(mixed[1], "cheer.png", gdir),
-]
+    g_uniform = run + [actions[0], actions[1]]
+    g_names = [f"run{i+1}.png" for i in range(6)] + ["jump.png", "fall.png"]
+    meta["gimbanjang"] = build_uniform(g_uniform, g_names, gdir)
+    meta["gimbanjang"]["realH"] = scaled(run[0]).height  # run1 알파 bbox 높이
+    meta["gimbanjang"]["raw"] = [
+        build_raw(actions[2], "slide.png", gdir),
+        build_raw(actions[3], "hurt.png", gdir),
+        build_raw(idle[0], "idle.png", gdir),
+        build_raw(mixed[0], "idle_docs.png", gdir),
+        build_raw(mixed[1], "cheer.png", gdir),
+    ]
 
-# ── 박소장 ──
-pdir = os.path.join(DST, "parksojang_custom")
-prun = load_frames("sheet_parksojang_run_throw.png", 25, [0, 1, 2, 3, 4, 5])
-pthrow = load_frames("sheet_parksojang_run_throw.png", 25, [7, 8, 9])
-pidle = load_frames("sheet_parksojang_idle.png", 25, [0])
-p_uniform = prun + pthrow + pidle
-p_names = [f"run{i+1}.png" for i in range(6)] + ["throw1.png", "throw2.png", "throw3.png", "idle.png"]
-meta["parksojang"] = build_uniform(p_uniform, p_names, pdir)
-meta["parksojang"]["realH"] = scaled(prun[0]).height
+    # ── 박소장 ──
+    pdir = os.path.join(DST, "parksojang_custom")
+    # 러닝 v2(2026-07-21): 8프레임. 신규 캐릭터가 구 세트(투척·idle)보다 ~7% 큼(피부 면적 실측) →
+    # 사전 정규화 + 프레임에 베이크된 접지 그림자 제거(발선 정렬 왜곡 방지)
+    PARK_V2_PRE = 1 / 1.07
+    prun = [f.resize((round(f.width*PARK_V2_PRE), round(f.height*PARK_V2_PRE)), Image.LANCZOS)
+            for f in (strip_ground_shadow(f) for f in load_frames("sheet_parksojang_run_v2.png", 8, range(8)))]
+    pthrow = load_frames("sheet_parksojang_run_throw.png", 25, [7, 8, 9])
+    pidle = load_frames("sheet_parksojang_idle.png", 25, [0])
+    p_uniform = prun + pthrow + pidle
+    p_names = [f"run{i+1}.png" for i in range(8)] + ["throw1.png", "throw2.png", "throw3.png", "idle.png"]
+    meta["parksojang"] = build_uniform(p_uniform, p_names, pdir)
+    meta["parksojang"]["realH"] = scaled(prun[0]).height
 
-print(json.dumps(meta, indent=2))
+    print(json.dumps(meta, indent=2))
+
+if __name__ == "__main__":
+    main()

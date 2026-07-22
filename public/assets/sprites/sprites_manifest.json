@@ -1,28 +1,82 @@
 {
   "gimbanjang": {
-    "canvas": { "w": 561, "h": 732 },
-    "anchor": { "x": 280, "baseline": "bottom" },
+    "canvas": {
+      "w": 522,
+      "h": 680
+    },
+    "anchor": {
+      "x": 261,
+      "baseline": "bottom"
+    },
     "clips": {
       "run": {
-        "frames": ["run1.webp", "run2.webp", "run3.webp", "run4.webp", "run5.webp", "run6.webp"],
+        "frames": [
+          "run1.webp",
+          "run2.webp",
+          "run3.webp",
+          "run4.webp",
+          "run5.webp",
+          "run6.webp"
+        ],
         "fps": 12,
         "loop": true
       },
-      "jump": { "frames": ["jump.webp"], "fps": 14, "loop": false },
-      "fall": { "frames": ["fall.webp"], "fps": 1, "loop": false }
+      "jump": {
+        "frames": [
+          "jump.webp"
+        ],
+        "fps": 14,
+        "loop": false
+      },
+      "fall": {
+        "frames": [
+          "fall.webp"
+        ],
+        "fps": 1,
+        "loop": false
+      }
     }
   },
   "parksojang": {
-    "canvas": { "w": 416, "h": 720 },
-    "anchor": { "x": 208, "baseline": "bottom" },
+    "canvas": {
+      "w": 416,
+      "h": 720
+    },
+    "anchor": {
+      "x": 208,
+      "baseline": "bottom"
+    },
     "clips": {
       "run": {
-        "frames": ["run1.webp", "run2.webp", "run3.webp", "run4.webp", "run5.webp", "run6.webp"],
+        "frames": [
+          "run1.webp",
+          "run2.webp",
+          "run3.webp",
+          "run4.webp",
+          "run5.webp",
+          "run6.webp",
+          "run7.webp",
+          "run8.webp"
+        ],
         "fps": 12,
         "loop": true
       },
-      "throw": { "frames": ["throw1.webp", "throw2.webp", "throw3.webp"], "fps": 12, "loop": false },
-      "idle": { "frames": ["idle.webp"], "fps": 1, "loop": true }
+      "throw": {
+        "frames": [
+          "throw1.webp",
+          "throw2.webp",
+          "throw3.webp"
+        ],
+        "fps": 12,
+        "loop": false
+      },
+      "idle": {
+        "frames": [
+          "idle.webp"
+        ],
+        "fps": 1,
+        "loop": true
+      }
     }
   }
 }

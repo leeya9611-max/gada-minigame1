@@ -22,7 +22,11 @@
 - ✅ **E3.9**(장애물 기하 정합): 로드 시 알파 트리밍(`sprites.ts` drawSprite/spriteAspect), 3계층 기하 표(`OBSTACLE_RENDER` — 1단층 puddle/stack/cone/sign·2단층 **fence 신규**(prop_fence_panel, obs_fence 레벨 타입)·슬라이드층 lowbar 틈 52), **클리어런스 빌드 게이트**(`npm run gate:clearance`, prebuild 자동 — 히트박스 기준 체공 거리 ≥ W+52+30), 스폰 최소 간격 0.7s(+fence 후 0.6s 추가 — 체공 1s 커버), lowbar↔낙하 이중구속 상호 배제(속도×0.75 반경), fence 엔들리스 35s부터·교육 구간2 1회(route_edu 재편·간격 위반 0). 헤드리스 ALL PASS(공정 구간 45s 피격 0)
 - ✅ **E3.7-3 slide 롤백**(2026-07-16): AI slide 포즈(앉은 자세)가 65px 렌더에서 인형처럼 축소 → 구 커스텀 slide.png(462×170 가로 포즈) 복원, 렌더 크기·RAW 경로 유지. AI 세트가 구 디자인에 스타일 매칭돼 이질감 없음
 - ✅ **중경 v2 교체**(2026-07-16): bg_mid_buildings_v2 반입(WebP q95, 표시 높이 280=화면 62% — E3.7-1 규칙 충족), 하단 SIL_SINK 30px로 지면 뒤 묻힘, 채도 필터 유지(**v2는 필터 보상 선적용 — 필터 변경 금지**, Background.ts 주석)
-- ⚠ **E3.7 잔여**(정류장 크기·지면 돌 톤)
+- ✅ **E3.10**(2026-07-21): ① 프레임 스케일 정규화(구 액션 시트가 v2 러닝보다 8% 큼 — 헬멧 면적 실측, jump/fall ×0.926·`build_chars.py` ACTIONS_NORM) ② 일시정지(⏸ 버튼·visibilitychange 자동, resume 시 절대시각 시프트로 연속성, 포기=엔들리스 `giveUp()`→outcome `"giveup"` 결과 전달/교육·노선 로비 복귀) ③ 장애물 대비(공통 접지 그림자+실루엣 2px 아웃라인 `drawSpriteOutlined`+폭 10%, 히트박스 불변) ④ HP 안전모 26px ⑤ 코인 안전 경로(스폰 상호 배제 `COIN_OBSTACLE_GAP` 140, 헤드리스 코인 추종 무피격·route_edu 정적 검사) ⑥ 지면 돌 얼룩 흙톤 블렌드(웅덩이 혼동 제거 — E3.7-5 겸) ⑦ z순서(캐릭터가 장애물 항상 앞). 헤드리스 ALL PASS·게이트 PASS
+- ✅ **캐릭터 v2 시트**(2026-07-21~22): 김반장 러닝 6프레임 + 박소장 러닝 8프레임(그림자 제거·7% 정규화) + HUD 배치(⏸ 우상단 모서리, 점수 패널 왼쪽)
+- ✅ **E3.11**(2026-07-22): ① 아이템 첫 등장 라벨(종류별 localStorage 2회 `yarikkiri.itemHint.*`, 캔버스 말풍선 + 획득 시 동일 문구 say 1.4s) ② 결과·클리어 오버레이 반응형(clamp 여백·폰트, cheer 캐릭터 타이틀 옆 배치·430px 이하 숨김, safe-area 인셋, overflowY, 버튼 상시 가시 — 667×375 확인) ③ 점수 내역 분리(랭킹 점수 / 코인→+N점 / 주행→+N점, 교육은 조작 이수 유지). puppeteer-core+시스템 Chrome으로 DOM 스크린샷 검증 패턴 확보(`scratchpad/shots/dom_shot.js`)
+- ✅ **E3.12·E3.13**(2026-07-22): 커피 캔·구급상자(heart, 효과·라벨 불변) 아이템 스프라이트 교체(38px, `SPRITE_PATHS.coffee/firstaid` — 아이템·장애물은 매니페스트가 아니라 SPRITE_PATHS 관리), puddle v2(경고 테이프 액센트, 규격·히트박스 불변), 교육 첫 피격 1회 안내 배너(`noteEduHit`, 판당 1회 sim 검증)
+- ⚠ **E3.7 잔여**(정류장 크기)
 - ✅ **E4**(주간 시즌 랭킹): `/api/season` 스텁(globalThis 메모리, 계약 주석 — 일일 베스트만 갱신·edu 제외·KST 월요일 리셋 4라운드), 엔들리스 결과 POST 병행(`postSeasonScore`), 랭킹 페이지 **가로 레이아웃** 개편(좌 패널=티어·주간요약·티켓 / 우 리스트+내 순위 고정 행, 탭 제거, 세로 모드 회전 안내), 로비 "NR·D-x·이번 주 점수·순위" 1줄(실패 시 숨김), **REWARD_SAFE_MODE=true**(예상 포인트→정액 안내, 포인트 교환 숨김 — 플래그 복귀 가능). `SEASON.EVENT_START`는 개발용 이번 주 월요일 — **운영 오픈 시 교체 필수**. 랭킹 페이지 유저 식별: ?token= → localStorage `yk_last_uid` 폴백
 - ▶ **다음: E5**(팔레트) → E6(QA) · E3.7 잔여
 - E 단계 프롬프트는 `docs/개발_작업지시서_v3_이벤트피벗.md`의 블록을 그대로 따를 것
@@ -59,4 +63,6 @@
 - **압축 규칙(2026-07-16 화질 사고 후 확정): PNG 256색 양자화 금지** — 그라데이션 밴딩·그레인으로 체감 화질 급락. 대형 에셋(캐릭터 프레임·배경 레이어)은 **WebP q95**(시각 무손실, `tools/asset_intake/` 스크립트가 자동 적용), 소형 오브젝트는 PNG 원본 유지
 - slide.png→slide.webp는 구 커스텀 포즈(가로형) 고정 — AI 앉은 포즈는 축소돼 보여 롤백(E3.7-3). 재반입 시 덮어쓰지 말 것 (`build_chars.py`가 덮어쓰므로 실행 후 `git show`로 복원 필요)
 - 김반장 러닝은 v2 시트(2026-07-21, `sheet_gimbanjang_run_v2.png` 6프레임·2배 해상도) — 구 세트와 크기 정합 위해 사전 정규화(V2_PRE) 적용됨
+- 박소장 러닝도 v2 시트(`sheet_parksojang_run_v2.png` **8프레임**) — 구 세트(투척·idle) 대비 7% 사전 정규화(PARK_V2_PRE) + **베이크된 접지 그림자 제거**(`strip_ground_shadow`, 발선 정렬 왜곡 방지). 캐릭터 시트 반입 시 그림자 유무 확인할 것
+- `build_chars.py`는 main() 가드 있음(import 시 빌드 미실행). 실행하면 slide를 AI 포즈로 덮어쓰므로 직후 `git show HEAD:...slide.webp`로 원복 필수
 - 헤드리스 스크린샷 하니스는 webp 미지원(node-canvas) → scratchpad shadow PNG 변환 경유

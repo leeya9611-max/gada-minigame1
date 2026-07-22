@@ -28,7 +28,7 @@ export const CHARS: Record<CharKey, CharMeta> = {
     canvasW: manifest.gimbanjang.canvas.w,
     canvasH: manifest.gimbanjang.canvas.h,
     anchorX: manifest.gimbanjang.anchor.x,
-    footY: 722,
+    footY: 670, // E3.10-1 ACTIONS_NORM 반영 캔버스(522×680)
     realH: 520,
   },
   parksojang: {
@@ -37,7 +37,7 @@ export const CHARS: Record<CharKey, CharMeta> = {
     canvasH: manifest.parksojang.canvas.h,
     anchorX: manifest.parksojang.anchor.x,
     footY: 710,
-    realH: 453,
+    realH: 419, // 러닝 v2(8프레임) run1 실측 — 구 세트와 캐릭터 크기 정합(PARK_V2_PRE)
   },
 };
 
@@ -81,6 +81,8 @@ export function isRawFrame(who: CharKey, file: string): boolean {
 export const SPRITE_PATHS = {
   coin: `${BASE}/items/coin_helmet.png`,
   booster: `${BASE}/items/booster_star.png`,
+  coffee: `${BASE}/items/coffee.png`, // E3.12: 다방커피 캔
+  firstaid: `${BASE}/items/firstaid.png`, // E3.12: heart 아이템의 구급상자 이미지(효과·라벨 동일)
   cement: `${BASE}/obstacles/cement.png`,
   crate: `${BASE}/obstacles/crate.png`,
   hazard: `${BASE}/obstacles/hazard.png`,
@@ -209,6 +211,64 @@ export function spriteAspect(key: SpriteKey): number {
   if (t) return t.sw / t.sh;
   const img = get(key);
   return img && img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : 1;
+}
+
+// ── E3.10-3: 장애물 대비 강화 — 실루엣 다크 아웃라인(2px) ──
+// 트림 영역의 알파 실루엣을 다크 톤으로 1회 캐시하고, 본체 뒤에 4방향 오프셋으로 깔아
+// 배경과 무관하게 윤곽이 읽히게 한다.
+const OUTLINE_COLOR = "#1f2a44";
+const silhouettes = new Map<string, HTMLCanvasElement>();
+
+function silhouetteOf(key: SpriteKey): HTMLCanvasElement | null {
+  const hit = silhouettes.get(key);
+  if (hit) return hit;
+  const img = get(key);
+  if (!img) return null;
+  try {
+    const t = trimBoxes.get(key) ?? {
+      sx: 0,
+      sy: 0,
+      sw: img.naturalWidth,
+      sh: img.naturalHeight,
+    };
+    const cv = document.createElement("canvas");
+    cv.width = t.sw;
+    cv.height = t.sh;
+    const c = cv.getContext("2d");
+    if (!c) return null;
+    c.drawImage(img, t.sx, t.sy, t.sw, t.sh, 0, 0, t.sw, t.sh);
+    c.globalCompositeOperation = "source-in";
+    c.fillStyle = OUTLINE_COLOR;
+    c.fillRect(0, 0, t.sw, t.sh);
+    silhouettes.set(key, cv);
+    return cv;
+  } catch {
+    return null;
+  }
+}
+
+// 아웃라인 포함 드로우 — 미로드 시 false(호출부 벡터 폴백)
+export function drawSpriteOutlined(
+  ctx: CanvasRenderingContext2D,
+  key: SpriteKey,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+  outline = 2
+): boolean {
+  const img = get(key);
+  if (!img) return false;
+  const sil = silhouetteOf(key);
+  if (sil) {
+    ctx.save();
+    ctx.globalAlpha *= 0.9;
+    for (const [ox, oy] of [[-outline, 0], [outline, 0], [0, -outline], [0, outline]]) {
+      ctx.drawImage(sil, dx + ox, dy + oy, dw, dh);
+    }
+    ctx.restore();
+  }
+  return drawSprite(ctx, key, dx, dy, dw, dh);
 }
 
 // 트림 영역을 소스로 대상 사각형에 그린다. 미로드 시 false(호출부 벡터 폴백).

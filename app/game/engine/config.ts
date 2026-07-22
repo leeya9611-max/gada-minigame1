@@ -49,6 +49,8 @@ export const SPAWN = {
   OBSTACLE_MIN_INTERVAL_S: 0.7,
   // E3.9-5: fence(2단층)는 엔들리스 중반부터
   FENCE_FROM_S: 35,
+  // E3.10-5: 코인 줄-장애물 수평 최소 간격(px) — 스폰 시 상호 배제로 보장
+  COIN_OBSTACLE_GAP: 140,
   ITEM_MIN_MS: 9000, // 특수 아이템 등장 주기
   ITEM_MAX_MS: 16000,
 } as const;

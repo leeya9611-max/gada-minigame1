@@ -16,7 +16,8 @@ export type ItemKind = "coffee" | "heart" | "booster" | "magnet";
 // 커피(HP회복) / 하트(HP회복) / 부스터(무적) / 자석(코인 흡인)
 
 // 플레이 종료 사유: 완주 / 붙잡힘 / 안전모 소진
-export type Outcome = "cleared" | "caught" | "hp";
+// giveup: 일시정지 → 포기(E3.10-2). 엔들리스는 현재 기록으로 정상 종료·결과 전달.
+export type Outcome = "cleared" | "caught" | "hp" | "giveup";
 
 // 플레이 모드 (E1): 노선 재생 / 엔들리스 무한 잔업(랭킹 본선) / 안전교육(E3)
 export type GameMode = "route" | "endless" | "edu";

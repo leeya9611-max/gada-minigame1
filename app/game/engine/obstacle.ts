@@ -1,5 +1,8 @@
 import { GROUND_Y, LOWBAR_GAP, OBSTACLE_RENDER, PLAYER, PROJECTILE, VIEW } from "./config";
-import { drawSprite, sprite, spriteAspect } from "./sprites";
+import { drawSprite, drawSpriteOutlined, sprite, spriteAspect } from "./sprites";
+
+// E3.10-3: 장애물 시각 폭 +10%(히트박스 불변 — 클리어런스 게이트는 히트박스 기준)
+const OB_W_BOOST = 1.1;
 import type {
   Box,
   ItemKind,
@@ -68,11 +71,22 @@ export class Obstacle implements Entity {
   draw(ctx: CanvasRenderingContext2D, _now?: number) {
     const b = this.box;
     const cxm = b.x + b.w / 2; // 히트박스 수평 중심(렌더 앵커)
+
+    // E3.10-3: 지상 장애물 공통 접지 그림자(평면 해저드 puddle 제외)
+    if (this.kind === "stack" || this.kind === "cone" || this.kind === "sign" || this.kind === "fence") {
+      ctx.save();
+      ctx.fillStyle = "rgba(31,42,68,0.3)";
+      ctx.beginPath();
+      ctx.ellipse(cxm, this.baseY - 1, Math.max(b.w * 0.7, 22), 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     if (this.kind === "puddle") {
       // 시멘트 웅덩이 — 렌더는 박스 폭(90) 기준 종횡비 유지(E3.9: 평면 해저드, 히트박스는 12px)
-      const dw = OBSTACLE_RENDER.puddle.w;
-      const dh = dw / spriteAspect("puddle");
-      if (drawSprite(ctx, "puddle", cxm - dw / 2, this.baseY - dh + 3, dw, dh)) return;
+      const dw = OBSTACLE_RENDER.puddle.w * OB_W_BOOST;
+      const dh = OBSTACLE_RENDER.puddle.w / spriteAspect("puddle");
+      if (drawSpriteOutlined(ctx, "puddle", cxm - dw / 2, this.baseY - dh + 3, dw, dh)) return;
       ctx.fillStyle = "#7a8699";
       ctx.beginPath();
       ctx.ellipse(b.x + b.w / 2, this.baseY - 2, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
@@ -213,8 +227,8 @@ export class Obstacle implements Entity {
     } else if (this.kind === "fence") {
       // E3.9-2: 안전 펜스(2단층) — 높이 105 기준 종횡비 유지, 미로드 시 벡터 패널
       const dh = OBSTACLE_RENDER.fence.h;
-      const dw = dh * spriteAspect("fence_panel");
-      if (drawSprite(ctx, "fence_panel", cxm - dw / 2, this.baseY - dh, dw, dh)) return;
+      const dw = dh * spriteAspect("fence_panel") * OB_W_BOOST;
+      if (drawSpriteOutlined(ctx, "fence_panel", cxm - dw / 2, this.baseY - dh, dw, dh)) return;
       ctx.save();
       ctx.fillStyle = "#5b6472";
       ctx.fillRect(cxm - 24, this.baseY - dh, 6, dh);
@@ -241,9 +255,9 @@ export class Obstacle implements Entity {
       const r = OBSTACLE_RENDER[this.kind];
       const key = this.kind === "cone" ? ("cone" as const) : ("sign_safety" as const);
       const dh = r.h;
-      const dw = dh * spriteAspect(key);
+      const dw = dh * spriteAspect(key) * OB_W_BOOST;
       const cx = cxm;
-      if (drawSprite(ctx, key, cx - dw / 2, this.baseY - dh, dw, dh)) return;
+      if (drawSpriteOutlined(ctx, key, cx - dw / 2, this.baseY - dh, dw, dh)) return;
       if (this.kind === "cone") {
         ctx.fillStyle = "#f07c2e";
         ctx.beginPath();
@@ -264,17 +278,10 @@ export class Obstacle implements Entity {
         ctx.strokeRect(cx - r.w / 2, this.baseY - r.h, r.w, r.h * 0.55);
       }
     } else {
-      // 자재 더미 — 박스 높이(60) 기준 종횡비 유지(E3.9), 미로드 시 벡터
-      // 발밑 그림자
-      ctx.save();
-      ctx.fillStyle = "rgba(31,42,68,0.3)";
-      ctx.beginPath();
-      ctx.ellipse(cxm, this.baseY - 1, b.w * 0.7, 7, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      // 자재 더미 — 박스 높이(60) 기준 종횡비 유지(E3.9), 미로드 시 벡터 (접지 그림자는 공통부)
       const dh = OBSTACLE_RENDER.stack.h;
-      const dw = dh * spriteAspect("stack");
-      if (drawSprite(ctx, "stack", cxm - dw / 2, this.baseY - dh, dw, dh)) return;
+      const dw = dh * spriteAspect("stack") * OB_W_BOOST;
+      if (drawSpriteOutlined(ctx, "stack", cxm - dw / 2, this.baseY - dh, dw, dh)) return;
       ctx.fillStyle = "#c0703c";
       roundRect(ctx, b.x, b.y, b.w, b.h, 4);
       ctx.fill();
@@ -379,6 +386,12 @@ export class Projectile implements Entity {
     // 낙하 순간(임팩트 창)에만 충돌 — 그 외엔 화면 밖 취급
     if (!this.impactActive) return { x: VIEW.W + 999, y: 0, w: 0, h: 0 };
     return { x: this.targetX - 20, y: this.groundY - 40, w: 40, h: 40 };
+  }
+
+  // E3.10-2: 일시정지 시간만큼 절대 시각 필드 이동(재개 시 연속성)
+  shiftClock(delta: number) {
+    this.spawnedAt += delta;
+    this.landAt += delta;
   }
 
   update(dt: number, worldSpeed: number, now: number) {
@@ -516,10 +529,12 @@ export class Item implements Entity {
   dead = false;
   collected = false;
   r = 16;
+  label: string | null; // E3.11-1: 첫 등장 안내(기기당 종류별 2회) — 아이템과 함께 스크롤
 
-  constructor(kind: ItemKind, y: number) {
+  constructor(kind: ItemKind, y: number, label: string | null = null) {
     this.kind = kind;
     this.y = y;
+    this.label = label;
   }
 
   get box(): Box {
@@ -533,6 +548,31 @@ export class Item implements Entity {
 
   draw(ctx: CanvasRenderingContext2D, now: number) {
     const bob = Math.sin(now / 180 + this.x / 30) * 3;
+
+    // E3.11-1: 첫 등장 안내 라벨 — hudPanel 축소판 말풍선(아이템 상단)
+    if (this.label) {
+      ctx.save();
+      ctx.font = "bold 11px sans-serif";
+      const tw = ctx.measureText(this.label).width;
+      const bw = tw + 16;
+      const bx = this.x - bw / 2;
+      const by = this.y + bob - this.r - 34;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      roundRect(ctx, bx, by, bw, 20, 9);
+      ctx.fill();
+      // 꼬리
+      ctx.beginPath();
+      ctx.moveTo(this.x - 4, by + 20);
+      ctx.lineTo(this.x + 4, by + 20);
+      ctx.lineTo(this.x, by + 25);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "center";
+      ctx.fillText(this.label, this.x, by + 14);
+      ctx.restore();
+    }
+
     ctx.save();
     ctx.translate(this.x, this.y + bob);
     // 후광
@@ -549,33 +589,43 @@ export class Item implements Entity {
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    if (this.kind === "coffee") {
-      // 종이컵 커피 (창작 디자인 — 커스텀 에셋 확보 전까지 벡터 유지)
-      ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.moveTo(-11, -12);
-      ctx.lineTo(11, -12);
-      ctx.lineTo(8, 14);
-      ctx.lineTo(-8, 14);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#6f4a2f";
-      ctx.fillRect(-11, -12, 22, 5);
-    } else if (this.kind === "heart") {
-      // 하트(HP 회복) — 코인 스타일 원형 배지로 톤 통일(E3.5)
-      ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.arc(0, 0, this.r + 1, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#e05a72";
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.fillStyle = "#ff4d6d";
-      ctx.beginPath();
-      ctx.moveTo(0, 9);
-      ctx.bezierCurveTo(-12, 0, -9, -11, 0, -4);
-      ctx.bezierCurveTo(9, -11, 12, 0, 0, 9);
-      ctx.fill();
+    if (this.kind === "coffee" || this.kind === "heart") {
+      // E3.12: AI 에셋(커피 캔 / 구급상자) — 코인(32px)·부스터(42px) 사이 규격, 미로드 시 벡터
+      const key = this.kind === "coffee" ? ("coffee" as const) : ("firstaid" as const);
+      const dh = this.r * 2.4; // ≈38px
+      const dw = dh * spriteAspect(key);
+      if (drawSprite(ctx, key, -dw / 2, -dh / 2, dw, dh)) {
+        ctx.restore();
+        return;
+      }
+      if (this.kind === "coffee") {
+        // 종이컵 커피(벡터 폴백)
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.moveTo(-11, -12);
+        ctx.lineTo(11, -12);
+        ctx.lineTo(8, 14);
+        ctx.lineTo(-8, 14);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#6f4a2f";
+        ctx.fillRect(-11, -12, 22, 5);
+      } else {
+        // 원형 배지 하트(벡터 폴백)
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r + 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#e05a72";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.fillStyle = "#ff4d6d";
+        ctx.beginPath();
+        ctx.moveTo(0, 9);
+        ctx.bezierCurveTo(-12, 0, -9, -11, 0, -4);
+        ctx.bezierCurveTo(9, -11, 12, 0, 0, 9);
+        ctx.fill();
+      }
     } else if (this.kind === "magnet") {
       // 자석(코인 흡인)
       ctx.strokeStyle = "#e63946";
@@ -623,6 +673,11 @@ export class FallingObject implements Entity {
     // 낙하 중·착지 직후에만 충돌
     if (!this.armed || this.dead) return { x: VIEW.W + 999, y: 0, w: 0, h: 0 };
     return { x: this.x - 18, y: this.y - 18, w: 36, h: 36 };
+  }
+
+  // E3.10-2: 일시정지 시간만큼 절대 시각 필드 이동(재개 시 연속성)
+  shiftClock(delta: number) {
+    if (this.landedAt) this.landedAt += delta;
   }
 
   update(dt: number, worldSpeed: number, now: number) {
