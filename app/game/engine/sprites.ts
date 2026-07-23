@@ -83,6 +83,7 @@ export const SPRITE_PATHS = {
   booster: `${BASE}/items/booster_star.png`,
   coffee: `${BASE}/items/coffee.png`, // E3.12: 다방커피 캔
   firstaid: `${BASE}/items/firstaid.png`, // E3.12: heart 아이템의 구급상자 이미지(효과·라벨 동일)
+  magnet: `${BASE}/items/magnet.png`, // E3.16: 자석
   cement: `${BASE}/obstacles/cement.png`,
   crate: `${BASE}/obstacles/crate.png`,
   hazard: `${BASE}/obstacles/hazard.png`,
@@ -98,7 +99,9 @@ export const SPRITE_PATHS = {
   cone: `${BASE}/props/cone.png`,
   sign_safety: `${BASE}/props/sign_safety.png`,
   fence_panel: `${BASE}/props/fence_panel.png`,
-  busstop: `${BASE}/props/busstop.png`,
+  busstop: `${BASE}/props/busstop.png`, // E3.14: v2 정면형
+  bus: `${BASE}/props/bus.png`, // E3.14: 완주 시 도착 연출
+  caught: `${BASE}/fx/caught.webp`, // E3.6-4: 실패 확정 잡힘 합성 컷(박소장+김반장)
 } as const;
 
 export type SpriteKey = keyof typeof SPRITE_PATHS;
@@ -291,6 +294,55 @@ export function drawSprite(
 // 캐릭터 프레임
 export function charSprite(who: CharKey, file: string): HTMLImageElement | null {
   return get(`${who}/${file}`);
+}
+
+// ── E3.6-3 부스터 연출: 골드 틴트 프레임 캐시(모션 트레일·광채 공용) ──
+const goldFrames = new Map<string, HTMLCanvasElement>();
+
+function goldFrameOf(who: CharKey, file: string): HTMLCanvasElement | null {
+  const key = `${who}/${file}`;
+  const hit = goldFrames.get(key);
+  if (hit) return hit;
+  const img = charSprite(who, file);
+  if (!img) return null;
+  try {
+    const cv = document.createElement("canvas");
+    cv.width = img.naturalWidth;
+    cv.height = img.naturalHeight;
+    const c = cv.getContext("2d");
+    if (!c) return null;
+    c.drawImage(img, 0, 0);
+    c.globalCompositeOperation = "source-atop"; // 캐릭터 실루엣에만 골드 오버레이
+    c.fillStyle = "rgba(255, 196, 64, 0.75)";
+    c.fillRect(0, 0, cv.width, cv.height);
+    goldFrames.set(key, cv);
+    return cv;
+  } catch {
+    return null;
+  }
+}
+
+// drawChar와 동일한 배치 수식으로 골드 틴트 프레임을 그린다(트레일 잔상·광채).
+export function drawCharGold(
+  ctx: CanvasRenderingContext2D,
+  who: CharKey,
+  file: string,
+  footX: number,
+  footYPx: number,
+  heightOverride?: number
+): boolean {
+  const gold = goldFrameOf(who, file);
+  if (!gold) return false;
+  const meta = CHARS[who];
+  if (isRawFrame(who, file)) {
+    const dh = heightOverride ?? TARGET_CHAR_H;
+    const dw = dh * (gold.width / gold.height);
+    ctx.drawImage(gold, footX - dw / 2, footYPx - dh, dw, dh);
+    return true;
+  }
+  const s = (heightOverride ?? TARGET_CHAR_H) / meta.realH;
+  ctx.drawImage(gold, footX - meta.anchorX * s, footYPx - meta.footY * s, meta.canvasW * s, meta.canvasH * s);
+  return true;
 }
 
 // 캐릭터를 발 기준으로 그린다. footX = 발 중심 화면 x, footYPx = 발바닥 화면 y.

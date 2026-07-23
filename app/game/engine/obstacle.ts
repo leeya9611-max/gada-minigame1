@@ -83,10 +83,13 @@ export class Obstacle implements Entity {
     }
 
     if (this.kind === "puddle") {
-      // 시멘트 웅덩이 — 렌더는 박스 폭(90) 기준 종횡비 유지(E3.9: 평면 해저드, 히트박스는 12px)
+      // 시멘트 웅덩이 — 렌더는 박스 폭(90) 기준 종횡비 유지(E3.9: 평면 해저드, 히트박스는 12px).
+      // 접지: 웅덩이는 그림자가 아니라 "바닥 자체" — 원판이 접지선(지면 상단 실선)에
+      // 걸치도록 하단을 지면 아래로 30% 내림(장애물은 지형 스트립 위에 그려져 겹침 표현 가능).
       const dw = OBSTACLE_RENDER.puddle.w * OB_W_BOOST;
       const dh = OBSTACLE_RENDER.puddle.w / spriteAspect("puddle");
-      if (drawSpriteOutlined(ctx, "puddle", cxm - dw / 2, this.baseY - dh + 3, dw, dh)) return;
+      const dy = this.baseY - dh + Math.round(dh * 0.3);
+      if (drawSpriteOutlined(ctx, "puddle", cxm - dw / 2, dy, dw, dh)) return;
       ctx.fillStyle = "#7a8699";
       ctx.beginPath();
       ctx.ellipse(b.x + b.w / 2, this.baseY - 2, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
@@ -102,7 +105,9 @@ export class Obstacle implements Entity {
       // 화면 꼭대기까지 반복해 기둥 연장(E3.5-11 유지). 미로드 시 기존 벡터 골조.
       const gateImg = sprite("lowbar");
       if (gateImg) {
-        const dw = 68; // 히트박스(48)보다 살짝 넓은 시각 폭
+        // E3.15-1: 가시성 확대 — 시각 폭만 86(히트박스 48·틈 52는 게임플레이 값 그대로,
+        // 시각·판정 분리. lowbar는 점프 불가·슬라이드 전용이라 체공 클리어런스 공식 비대상)
+        const dw = 86;
         const dx = b.x + b.w / 2 - dw / 2;
         const dh = dw * (gateImg.height / gateImg.width);
         const bottom = b.y + b.h; // 통과 gap 상단
@@ -199,7 +204,8 @@ export class Obstacle implements Entity {
       // 매달린 자재: 파이프 묶음(가로로 눕혀 히트박스 폭에 맞춤), 미로드 시 hazard/벡터
       const pipesImg = sprite("fall_pipes");
       if (pipesImg) {
-        const dw = b.w + 6;
+        // E3.15 후속: 파이프 묶음 시각 확대(히트박스 불변 — 시각/판정 분리)
+        const dw = b.w + 24;
         const dh = dw * (pipesImg.width / pipesImg.height); // 90° 회전 → 종횡 교환
         ctx.translate(cx, topY + b.h / 2);
         ctx.rotate(Math.PI / 2);
@@ -304,6 +310,7 @@ export class Coin implements Entity {
   dead = false;
   collected = false;
   r = 14;
+  poppedAt = 0; // E3.6-3: 획득 순간(위로 튀며 페이드)
 
   constructor(y: number) {
     this.x = VIEW.W + 30;
@@ -311,23 +318,63 @@ export class Coin implements Entity {
   }
 
   get box(): Box {
+    if (this.collected) return { x: VIEW.W + 999, y: 0, w: 0, h: 0 }; // 팝 중 재획득 방지
     return { x: this.x - this.r, y: this.y - this.r, w: this.r * 2, h: this.r * 2 };
   }
 
-  update(dt: number, worldSpeed: number, _now?: number) {
+  // E3.6-3: 획득 — 300ms 동안 위로 튀며 페이드 후 소멸
+  pop(now: number) {
+    this.collected = true;
+    this.poppedAt = now;
+  }
+
+  update(dt: number, worldSpeed: number, now: number) {
     this.x -= worldSpeed * dt;
+    if (this.collected) {
+      this.y -= 130 * dt; // 위로 튐
+      if (now - this.poppedAt > 300) this.dead = true;
+    }
     if (this.x + this.r < -20) this.dead = true;
   }
 
   draw(ctx: CanvasRenderingContext2D, now: number) {
-    const bob = Math.sin(now / 200 + this.x / 40) * 3;
+    const bob = this.collected ? 0 : Math.sin(now / 200 + this.x / 40) * 3;
     ctx.save();
+    if (this.collected) ctx.globalAlpha = Math.max(0, 1 - (now - this.poppedAt) / 300);
     ctx.translate(this.x, this.y + bob);
-    // WP4: 코인 스프라이트(안전모 코인 커스텀 확보 전 임시), 미로드 시 벡터
+    // E3.17-3: 옅은 원형 발광 — 어떤 배경에서도 도드라지게(회전 스케일 밖, 원형 유지)
+    if (!this.collected) {
+      const hr = this.r * 2.1;
+      const hg = ctx.createRadialGradient(0, 0, this.r * 0.5, 0, 0, hr);
+      hg.addColorStop(0, "rgba(255, 214, 90, 0.4)");
+      hg.addColorStop(1, "rgba(255, 214, 90, 0)");
+      ctx.fillStyle = hg;
+      ctx.beginPath();
+      ctx.arc(0, 0, hr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // E3.6-3: 세로축 회전(가로 스케일 진동) — 획득 팝 중에는 정지
+    const spin = this.collected ? 1 : Math.sin(now / 220 + this.x / 55);
+    ctx.scale(Math.max(0.18, Math.abs(spin)), 1);
     const img = sprite("coin");
     if (img) {
       const s = this.r * 2.3;
       ctx.drawImage(img, -s / 2, -s / 2, s, s);
+      // 간헐 반짝 스파클(코인별 위상)
+      const sp = (now / 900 + this.x / 300) % 1;
+      if (!this.collected && sp < 0.14) {
+        const q = sp / 0.14;
+        ctx.save();
+        ctx.globalAlpha = Math.sin(q * Math.PI) * 0.9;
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        const sx = this.r * 0.55, sy = -this.r * 0.5, len = 5;
+        ctx.beginPath();
+        ctx.moveTo(sx - len, sy); ctx.lineTo(sx + len, sy);
+        ctx.moveTo(sx, sy - len); ctx.lineTo(sx, sy + len);
+        ctx.stroke();
+        ctx.restore();
+      }
       ctx.restore();
       return;
     }
@@ -417,29 +464,29 @@ export class Projectile implements Entity {
       ctx.strokeStyle = "#ff3b30";
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.ellipse(this.targetX, this.groundY - 3, 26, 8, 0, 0, Math.PI * 2);
+      ctx.ellipse(this.targetX, this.groundY - 3, 34, 11, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = (0.25 + p * 0.35) * (blink ? 1 : 0.6);
       ctx.fillStyle = "rgba(31,42,68,0.8)";
       ctx.beginPath();
-      ctx.ellipse(this.targetX, this.groundY - 3, 18 + p * 6, 5 + p * 2, 0, 0, Math.PI * 2);
+      ctx.ellipse(this.targetX, this.groundY - 3, 24 + p * 8, 7 + p * 3, 0, 0, Math.PI * 2);
       ctx.fill();
       // '!' 아이콘(마커 위)
       ctx.globalAlpha = blink ? 0.95 : 0.45;
       ctx.fillStyle = "#ff3b30";
       ctx.beginPath();
-      ctx.moveTo(this.targetX, this.groundY - 58);
-      ctx.lineTo(this.targetX + 14, this.groundY - 32);
-      ctx.lineTo(this.targetX - 14, this.groundY - 32);
+      ctx.moveTo(this.targetX, this.groundY - 74);
+      ctx.lineTo(this.targetX + 19, this.groundY - 40);
+      ctx.lineTo(this.targetX - 19, this.groundY - 40);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.fillStyle = "#fff";
-      ctx.font = "bold 17px sans-serif";
+      ctx.font = "bold 23px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("!", this.targetX, this.groundY - 36);
+      ctx.fillText("!", this.targetX, this.groundY - 46);
       ctx.restore();
 
       // ── 비행체: 박소장 손 → 착지 지점 포물선(정점은 화면 위) ──
@@ -466,7 +513,7 @@ export class Projectile implements Entity {
     ctx.strokeStyle = "rgba(210,190,160,0.8)";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.ellipse(this.targetX, this.groundY - 4, 12 + q * 26, 4 + q * 8, 0, 0, Math.PI * 2);
+    ctx.ellipse(this.targetX, this.groundY - 4, 16 + q * 34, 5 + q * 10, 0, 0, Math.PI * 2);
     ctx.stroke();
     // 파편 조각(방사)
     ctx.fillStyle = this.kind === "papers" ? "#fdfdfd" : this.kind === "tube" ? "#3b7dd8" : "#e63946";
@@ -475,7 +522,7 @@ export class Projectile implements Entity {
       const d = 10 + q * 30;
       const px = this.targetX + Math.cos(ang + Math.PI) * d;
       const py = this.groundY - 6 - Math.sin(ang) * d * 0.9 + q * q * 22;
-      ctx.fillRect(px - 4, py - 4, 8, 8);
+      ctx.fillRect(px - 5, py - 5, 10, 10);
     }
     ctx.restore();
   }
@@ -484,8 +531,9 @@ export class Projectile implements Entity {
   private drawBody(ctx: CanvasRenderingContext2D) {
     const projImg = sprite(this.kind);
     if (projImg) {
+      // E3.15 후속: 비행체 시각 확대(판정 창·낙하 지점 불변)
       const dw =
-        this.kind === "papers" ? 44 : this.kind === "tube" ? 36 * (projImg.width / projImg.height) : 30;
+        this.kind === "papers" ? 60 : this.kind === "tube" ? 48 * (projImg.width / projImg.height) : 42;
       const dh = dw * (projImg.height / projImg.width);
       ctx.drawImage(projImg, -dw / 2, -dh / 2, dw, dh);
       return;
@@ -582,12 +630,16 @@ export class Item implements Entity {
       heart: "#ff6b8a",
       magnet: "#5ec8ff",
     };
-    ctx.globalAlpha = 0.4;
-    ctx.fillStyle = HALO[this.kind] ?? "#ffd23f";
+    // E3.17-3: 옅은 원형 발광(radial) — 아이템 색 톤, 배경 무관 가시성
+    const hr2 = this.r * 2.3;
+    const hg2 = ctx.createRadialGradient(0, 0, this.r * 0.55, 0, 0, hr2);
+    const haloColor = HALO[this.kind] ?? "#ffd23f";
+    hg2.addColorStop(0, haloColor + "73"); // ≈ 45% 알파
+    hg2.addColorStop(1, haloColor + "00");
+    ctx.fillStyle = hg2;
     ctx.beginPath();
-    ctx.arc(0, 0, this.r + 6, 0, Math.PI * 2);
+    ctx.arc(0, 0, hr2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
 
     if (this.kind === "coffee" || this.kind === "heart") {
       // E3.12: AI 에셋(커피 캔 / 구급상자) — 코인(32px)·부스터(42px) 사이 규격, 미로드 시 벡터
@@ -627,7 +679,14 @@ export class Item implements Entity {
         ctx.fill();
       }
     } else if (this.kind === "magnet") {
-      // 자석(코인 흡인)
+      // E3.16-2: AI 에셋 자석 — 코인·아이템 규격(38px), 미로드 시 벡터
+      const dh = this.r * 2.4;
+      const dw = dh * spriteAspect("magnet");
+      if (drawSprite(ctx, "magnet", -dw / 2, -dh / 2, dw, dh)) {
+        ctx.restore();
+        return;
+      }
+      // 자석(코인 흡인) 벡터 폴백
       ctx.strokeStyle = "#e63946";
       ctx.lineWidth = 8;
       ctx.beginPath();
@@ -726,15 +785,18 @@ export class FallingObject implements Entity {
       ctx.globalAlpha = blink ? 0.95 : 0.4;
       ctx.fillStyle = "#ff3b30";
       ctx.beginPath();
-      ctx.moveTo(this.x, 12);
-      ctx.lineTo(this.x + 13, 36);
-      ctx.lineTo(this.x - 13, 36);
+      ctx.moveTo(this.x, 10);
+      ctx.lineTo(this.x + 17, 42);
+      ctx.lineTo(this.x - 17, 42);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
       ctx.fillStyle = "#fff";
-      ctx.font = "bold 16px sans-serif";
+      ctx.font = "bold 20px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("!", this.x, 33);
+      ctx.fillText("!", this.x, 37);
       ctx.restore();
       if (!this.armed) return;
     }
@@ -758,7 +820,7 @@ export class FallingObject implements Entity {
     ctx.rotate(this.armed && !landed ? now / 260 : 0);
     const img = sprite("fall_pipes");
     if (img) {
-      const dh = 54;
+      const dh = 74; // E3.15 후속: 시각 확대(충돌 박스 36×36 불변)
       const dw = dh * (img.width / img.height);
       ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
     } else {

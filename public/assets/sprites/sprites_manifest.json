@@ -76,6 +76,13 @@
         ],
         "fps": 1,
         "loop": true
+      },
+      "grab": {
+        "frames": [
+          "grab_reach.webp"
+        ],
+        "fps": 1,
+        "loop": false
       }
     }
   }

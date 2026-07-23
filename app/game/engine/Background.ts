@@ -39,7 +39,10 @@ const SIL_SINK = 30;
 // E3.8-3: 컨테이너 더미 등 중경 하단 오브젝트가 장애물(자재더미)과 구분되도록 채도 강하.
 // bg_mid_buildings_v2는 이 필터를 전제로 채도가 보상 선적용된 이미지 — 필터를 끄거나 바꾸지 말 것.
 const MID_SATURATE = 0.5;
-const MID_BRIGHTEN = 1.1;
+const MID_BRIGHTEN = 1.12; // E3.17-2: +12%
+const MID_CONTRAST = 0.78; // E3.17-2: 대비 압축(1=원본, 낮을수록 중간값으로)
+const MID_PIVOT = 168; // 대비 압축 기준 밝기
+const MID_BLUR_SCALE = 3; // E3.17-1: 다운샘플 배율(≈ 가우시안 2~3px 상당)
 
 type LayerSource = HTMLImageElement | HTMLCanvasElement;
 
@@ -56,13 +59,30 @@ function filterCache(img: HTMLImageElement, saturate: number, brighten: number):
     const px = data.data;
     for (let i = 0; i < px.length; i += 4) {
       if (px[i + 3] === 0) continue;
-      const r = px[i], g = px[i + 1], b = px[i + 2];
-      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      px[i] = Math.min(255, (luma + (r - luma) * saturate) * brighten);
-      px[i + 1] = Math.min(255, (luma + (g - luma) * saturate) * brighten);
-      px[i + 2] = Math.min(255, (luma + (b - luma) * saturate) * brighten);
+      const luma = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+      for (let ch = 0; ch < 3; ch++) {
+        const v = (luma + (px[i + ch] - luma) * saturate) * brighten;
+        // E3.17-2: 대비 압축 — 어두운 창문 등이 전경 아웃라인과 경쟁하지 않게
+        px[i + ch] = Math.max(0, Math.min(255, MID_PIVOT + (v - MID_PIVOT) * MID_CONTRAST));
+      }
     }
     c.putImageData(data, 0, 0);
+    // E3.17-1: 약한 블러 — 1/N 다운샘플 후 업샘플(스무딩) ≈ 가우시안 2~3px. 캐시 1회.
+    try {
+      const small = document.createElement("canvas");
+      small.width = Math.max(1, Math.round(cv.width / MID_BLUR_SCALE));
+      small.height = Math.max(1, Math.round(cv.height / MID_BLUR_SCALE));
+      const sc = small.getContext("2d");
+      if (sc) {
+        sc.imageSmoothingEnabled = true;
+        sc.drawImage(cv, 0, 0, small.width, small.height);
+        c.imageSmoothingEnabled = true;
+        c.clearRect(0, 0, cv.width, cv.height);
+        c.drawImage(small, 0, 0, cv.width, cv.height);
+      }
+    } catch {
+      /* 블러 실패 시 색 보정본만 사용 */
+    }
     return cv;
   } catch {
     return null; // CORS 등 실패 시 원본 사용

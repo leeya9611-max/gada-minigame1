@@ -1452,15 +1452,18 @@ function GameOverOverlay({
             : "퇴근 실패!"}
       </div>
       <div style={{ color: "#cdd8ec", fontSize: 13, marginBottom: 12 }}>
-        {result.outcome === "caught"
-          ? "박소장에게 붙잡혔습니다… 잔업 확정"
-          : result.outcome === "giveup"
-            ? "현재 기록으로 마감했습니다"
-            : "안전모가 다 벗겨졌습니다…"}{" "}
+        {/* E3.6-2 수정: 교육 실패(반복 부딪힘) 전용 문구 — 재교육 유도 */}
+        {result.mode === "edu"
+          ? "박소장에게 붙잡혔습니다 — 안전교육을 다시 받아야 합니다"
+          : result.outcome === "caught"
+            ? "박소장에게 붙잡혔습니다… 잔업 확정"
+            : result.outcome === "giveup"
+              ? "현재 기록으로 마감했습니다"
+              : "안전모가 다 벗겨졌습니다…"}{" "}
         · 🎟 {tickets}
       </div>
 
-      {/* E3.11-3: 점수 내역 분리 표기 — 코인 가치 가시화 */}
+      {/* E3.11-3: 점수 내역 분리 표기 — 코인 가치 가시화 (교육 실패는 점수 대신 기록만) */}
       <div
         style={{
           display: "flex",
@@ -1472,6 +1475,21 @@ function GameOverOverlay({
           justifyContent: "center",
         }}
       >
+        {result.mode === "edu" ? (
+          <>
+            <div style={resultCard}>
+              <div style={resultLabel}>기록</div>
+              <div style={{ fontSize: "clamp(20px, 5.4vh, 30px)", fontWeight: 800, color: "#8ee6d0" }}>
+                {result.playDuration}s
+              </div>
+            </div>
+            <div style={resultCard}>
+              <div style={resultLabel}>코인</div>
+              <div style={{ fontSize: "clamp(20px, 5.4vh, 30px)", fontWeight: 800 }}>🟡 {result.coinCount}</div>
+            </div>
+          </>
+        ) : (
+          <>
         <div style={resultCard}>
           <div style={resultLabel}>랭킹 점수</div>
           <div style={{ fontSize: "clamp(20px, 5.4vh, 30px)", fontWeight: 800, color: "#ffd23f" }}>
@@ -1503,6 +1521,8 @@ function GameOverOverlay({
               {expectedPoints.toLocaleString()}P
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
       <div style={{ fontSize: 11, color: "#8fa3c4", marginBottom: "clamp(6px, 1.6vh, 14px)", textAlign: "center" }}>

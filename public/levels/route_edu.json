@@ -445,6 +445,11 @@
    "type": "coin"
   },
   {
+   "col": 104,
+   "slot": 2,
+   "type": "magnet"
+  },
+  {
    "col": 117,
    "slot": 2,
    "type": "obs_air"
@@ -543,6 +548,11 @@
    "col": 249,
    "slot": 1,
    "type": "heart"
+  },
+  {
+   "col": 256,
+   "slot": 2,
+   "type": "dash"
   },
   {
    "col": 262,

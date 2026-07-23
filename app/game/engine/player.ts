@@ -15,6 +15,10 @@ export class Player {
   sliding = false; // 슬라이드(숙이기) 중
   slideUntil = 0; // 자동 기립 시각(ms)
   jumpStartAt = 0; // 점프 클립(crouch→jump→apex) 재생 기준 시각
+  landedAt = 0; // E3.6-3: 착지 순간(먼지 퍼프 연출)
+  // E3.6-3: 부스터 트레일용 — 마지막으로 그린 포즈(엔진이 히스토리로 보관)
+  lastPose: { file: string; footX: number; footY: number; hOverride?: number } | null = null;
+  visualOffsetX = 0; // E3.6-2 보강: 봐주기 반동 등 시각 전용 x 오프셋(히트박스 불변)
 
   get onGround(): boolean {
     return this.y >= this.floorY - PLAYER.H - 0.5;
@@ -34,6 +38,7 @@ export class Player {
   }
 
   reset() {
+    this.visualOffsetX = 0;
     this.floorY = GROUND_Y;
     this.y = GROUND_Y - PLAYER.H;
     this.vy = 0;
@@ -78,6 +83,7 @@ export class Player {
     this.invulnUntil += delta;
     this.jumpStartAt += delta;
     this.slideUntil += delta;
+    if (this.landedAt) this.landedAt += delta;
   }
 
   isInvuln(now: number): boolean {
@@ -107,6 +113,7 @@ export class Player {
 
     const floor = this.floorY - PLAYER.H;
     if (this.y >= floor) {
+      if (this.jumps > 0 || this.vy > 300) this.landedAt = now; // 착지 퍼프 트리거
       this.y = floor;
       this.vy = 0;
       this.jumps = 0;
@@ -144,8 +151,36 @@ export class Player {
     // 매니페스트 클립 렌더 — 실측 키 기준 통일 스케일, 발바닥 지면 정렬.
     const frame = this.currentFrame(now);
     if (frame) {
-      const footX = this.x + PLAYER.W / 2;
+      const footX = this.x + this.visualOffsetX + PLAYER.W / 2;
       const footY = this.sliding ? this.floorY : this.y + PLAYER.H;
+
+      // E3.6-3 주스: 착지 먼지 퍼프(300ms) + 달리는 동안 발밑 미세 먼지
+      const sinceLand = now - this.landedAt;
+      if (this.landedAt && sinceLand < 300) {
+        const q = sinceLand / 300;
+        ctx.save();
+        ctx.globalAlpha = (1 - q) * 0.55;
+        ctx.fillStyle = "rgba(210,190,160,1)";
+        for (let i = 0; i < 3; i++) {
+          const dir = i - 1; // -1, 0, 1
+          ctx.beginPath();
+          ctx.arc(footX - 6 + dir * (10 + q * 22), this.floorY - 4 - q * 6, 3 + q * 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+      if (this.onGround && !this.sliding) {
+        ctx.save();
+        ctx.fillStyle = "rgba(200,180,150,0.28)";
+        for (let i = 0; i < 2; i++) {
+          const ph = ((now / 70 + i * 1.6) % 3) / 3; // 흘러가는 미세 먼지
+          ctx.globalAlpha = (1 - ph) * 0.3;
+          ctx.beginPath();
+          ctx.arc(this.x - 4 - ph * 26, this.floorY - 3, 2 + ph * 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
       if (this.sliding) {
         // 슬라이드 흙먼지 — 크고 연속적으로, 스피드라인까지(E3.5: "미끄러짐" 명시)
         ctx.save();
@@ -171,6 +206,7 @@ export class Player {
       }
       // 슬라이드는 와이드 포즈 → 낮은 히트박스에 맞춘 높이로
       const hOverride = this.sliding ? this.slideH * 1.35 : undefined;
+      this.lastPose = { file: frame, footX, footY, hOverride }; // 부스터 트레일용
       const drawn = drawChar(ctx, "gimbanjang", frame, footX, footY, hOverride);
       if (drawn) {
         ctx.restore();

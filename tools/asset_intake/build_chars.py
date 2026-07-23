@@ -5,7 +5,7 @@
 - 균일 캔버스(run/jump/fall/throw) + 트림 raw(slide/hurt/idle/idle_docs/cheer)
 출력: 프레임 PNG + manifest 값(JSON stdout)
 """
-import json, os, sys
+import json, math, os, sys
 import numpy as np
 from PIL import Image
 from scipy import ndimage
@@ -118,8 +118,12 @@ def main():
     PARK_V2_PRE = 1 / 1.07
     prun = [f.resize((round(f.width*PARK_V2_PRE), round(f.height*PARK_V2_PRE)), Image.LANCZOS)
             for f in (strip_ground_shadow(f) for f in load_frames("sheet_parksojang_run_v2.png", 8, range(8)))]
-    pthrow = load_frames("sheet_parksojang_run_throw.png", 25, [7, 8, 9])
-    pidle = load_frames("sheet_parksojang_idle.png", 25, [0])
+    # E3.15-2: 구 세트(투척·idle)가 v2 러닝보다 18% 큼(헬멧 돔 폭 실측) → 통일 정규화
+    PARK_OLD_NORM = 1 / 1.178
+    pthrow = [f.resize((round(f.width*PARK_OLD_NORM), round(f.height*PARK_OLD_NORM)), Image.LANCZOS)
+              for f in load_frames("sheet_parksojang_run_throw.png", 25, [7, 8, 9])]
+    pidle = [f.resize((round(f.width*PARK_OLD_NORM), round(f.height*PARK_OLD_NORM)), Image.LANCZOS)
+             for f in load_frames("sheet_parksojang_idle.png", 25, [0])]
     p_uniform = prun + pthrow + pidle
     p_names = [f"run{i+1}.png" for i in range(8)] + ["throw1.png", "throw2.png", "throw3.png", "idle.png"]
     meta["parksojang"] = build_uniform(p_uniform, p_names, pdir)
@@ -127,5 +131,53 @@ def main():
 
     print(json.dumps(meta, indent=2))
 
+def _linear_scale(area_ref, area):
+    return math.sqrt(area / max(1, area_ref))
+
+def verify_frame_scales():
+    """E3.15-2 상시 게이트: '전 프레임 실측 키 126px 통일' 검증.
+    지표 = 머리 밴드(상단 22%) 최대 연결 요소(헬멧 돔) 폭 — 색·스티커·포즈에 강건한 강체 지표.
+    측면 프레임만 비교(정면 idle·소지품이 돔을 가리는 프레임은 제외). run1 대비 ±6% 초과 시 빌드 실패."""
+    from scipy import ndimage as ndi
+    def dome_w(path):
+        im = Image.open(path).convert("RGBA")
+        a = np.array(im)[:, :, 3] > 16
+        ys, xs = np.where(a)
+        y0, y1 = ys.min(), ys.max()
+        band = a[y0:y0 + int((y1 - y0) * 0.22)]
+        lab, n = ndi.label(band)
+        if n == 0:
+            return 0
+        sizes = ndi.sum(band, lab, range(1, n + 1))
+        keep = lab == (np.argmax(sizes) + 1)
+        cols = np.where(keep.any(axis=0))[0]
+        return int(cols.max() - cols.min() + 1)
+    checks = [
+        ("gimbanjang_custom", ["run1", "run3", "run6", "jump", "fall"]),
+        # park: throw2(튜브가 돔 가림)·idle(정면 뷰)은 지표 예외 — 측면 프레임만
+        ("parksojang_custom", ["run1", "run4", "run8", "throw1", "throw3", "grab_reach"]),
+    ]
+    failed = False
+    for dirn, names in checks:
+        base = None
+        for n in names:
+            path = os.path.join(DST, dirn, n + ".webp")
+            if not os.path.exists(path):
+                continue
+            w = dome_w(path)
+            if base is None:
+                base = w
+                continue
+            sc = w / max(1, base)
+            ok = abs(sc - 1) <= 0.06
+            print(f"  {'OK ' if ok else 'FAIL'} {dirn}/{n}: 돔 폭 스케일 {sc:.3f}")
+            if not ok:
+                failed = True
+    if failed:
+        raise SystemExit("프레임 스케일 불일치(±6% 초과) — 시트 정규화 계수(ACTIONS_NORM/PARK_OLD_NORM 류)를 조정하세요.")
+    print("프레임 스케일 게이트 OK (실측 키 126px 통일)")
+
+
 if __name__ == "__main__":
     main()
+    verify_frame_scales()
