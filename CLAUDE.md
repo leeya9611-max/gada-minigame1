@@ -34,6 +34,9 @@
 - ✅ **E3.17**(2026-07-23): 중경 오프스크린 캐시에 약한 블러(다운→업 샘플 ≈2~3px)+대비 압축(MID_CONTRAST 0.78·PIVOT 168, 명도 +12%) — 전경 선명도 상대 강조. 코인·아이템 radial 발광 halo. cone(170px)·fall_pipes(220px) 고해상 재반입(DPR2 업스케일 블러 해소 — 소형 스프라이트는 "렌더px×2×1.4" 소스 확보 원칙)
 - ⚠ **E3.7 잔여**(정류장 크기 — E3.14 busstop v2로 사실상 해소)
 - ✅ **E4**(주간 시즌 랭킹): `/api/season` 스텁(globalThis 메모리, 계약 주석 — 일일 베스트만 갱신·edu 제외·KST 월요일 리셋 4라운드), 엔들리스 결과 POST 병행(`postSeasonScore`), 랭킹 페이지 **가로 레이아웃** 개편(좌 패널=티어·주간요약·티켓 / 우 리스트+내 순위 고정 행, 탭 제거, 세로 모드 회전 안내), 로비 "NR·D-x·이번 주 점수·순위" 1줄(실패 시 숨김), **REWARD_SAFE_MODE=true**(예상 포인트→정액 안내, 포인트 교환 숨김 — 플래그 복귀 가능). `SEASON.EVENT_START`는 개발용 이번 주 월요일 — **운영 오픈 시 교체 필수**. 랭킹 페이지 유저 식별: ?token= → localStorage `yk_last_uid` 폴백
+- ✅ **잡힘 판정 버그 수정**(2026-07-23): 실패 판정 gap 우선으로 스왑 — 마지막 피격에서 hp·gap 동시 소진 시 hp가 먼저 잡혀 "붙잡혔습니다"가 영영 안 뜨던 버그(무입력 20판 caught 0 → 수정 후 caught/hp 10:10). HIT_LOSS는 110 유지(135는 hp 사망 소멸로 과함)
+- ✅ **E3.18**(2026-07-24): Black Han Sans 헤드라인(next/font — 결과·클리어·로비 타이틀), primaryBtn/secondaryBtn 글로시(그라데이션+하이라이트+하단 그림자), resultCard·로비 카드 대각선 하이라이트 텍스처, LobbyIcon 컴포넌트(icon_edu/icon_endless.png 폴백=이모지), 로비 배경 lobby_bg.png cover+그라데이션(없으면 자연 폴백), caught 결과 히어로=합성 컷(430px 이하 숨김). 파일 누락 상태 폴백 확인 — 아이콘·배경 에셋은 추후 반입만 하면 자동 적용
+- ✅ **E4-6**(2026-07-24): 랭킹 페이지 비주얼 업그레이드 — ranking_bg.webp cover+오버레이, 티어 배지 4종(tier_{master/banjang/gigong/jogong}.png)·메달 3종(medal_{1~3}.png) 이미지 교체(전부 onError 이모지 폴백), chargeBtn 글로시 통일, RankRow 텍스처+상위 3위 티어 컬러 글로우, panel_frame.webp 9-slice border-image(15% fill/16px stretch — 파일 없으면 투명 보더+기존 박스 폴백). 폴백/에셋 양쪽 스크린샷 검증. 에셋 원본은 assets/incoming_ai/ui/(gitignore). **E4-7**: 랭킹에 닉네임(캐시→서버 갱신, 내 티어 카드+고정 행 — 없으면 "나" 폴백), statLabel nowrap. **E4-8**: 좌측 aside 제거 — 배경 노출(헤더+cheer 캐릭터 42vh·430px 이하 숨김) / 우측 통합 패널(내 정보+티켓+리스트, 프레임은 우측만), 비율 0.8:1.3
 - ▶ **다음: E5**(팔레트) → E6(QA) · E3.7 잔여
 - E 단계 프롬프트는 `docs/개발_작업지시서_v3_이벤트피벗.md`의 블록을 그대로 따를 것
 

@@ -30,6 +30,10 @@ import {
   validateNickname,
 } from "@/lib/nickname";
 import Link from "next/link";
+import { Black_Han_Sans } from "next/font/google";
+
+// E3.18-1: 두꺼운 헤드라인용 한글 폰트(결과 타이틀·로비 섹션 타이틀 전용)
+const headlineFont = Black_Han_Sans({ weight: "400", subsets: ["latin"], preload: false });
 
 const APP_VERSION = "v0.2.0";
 // 포인트-티켓 교환비 미확정(보류 항목) → 임시 환산율로 표시만
@@ -947,7 +951,12 @@ function LobbyScreen({
       style={{
         position: "absolute",
         inset: 0,
-        background: "linear-gradient(180deg, #1F2A44 0%, #0e1526 100%)",
+        // E3.18-5: 배경 이미지(cover) 위 반투명 그라데이션 — 파일 없으면 그라데이션만 렌더(자연 폴백)
+        backgroundColor: "#141d33",
+        backgroundImage:
+          "linear-gradient(180deg, rgba(31,42,68,0.86) 0%, rgba(14,21,38,0.92) 100%), url(/assets/ui/lobby_bg.png)",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
         color: "#fff",
         display: "flex",
         flexDirection: "column",
@@ -1007,7 +1016,9 @@ function LobbyScreen({
             gap: 8,
             borderRadius: 20,
             border: "3px solid rgba(94,200,255,0.5)",
-            background: "linear-gradient(180deg, rgba(46,102,246,0.3), rgba(46,102,246,0.12))",
+            background:
+              "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(46,102,246,0.3) 30%, rgba(46,102,246,0.12) 100%)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -10px 18px rgba(0,0,0,0.18)",
             color: "#fff",
             cursor: loading ? "default" : "pointer",
             opacity: loading ? 0.6 : 1,
@@ -1031,8 +1042,8 @@ function LobbyScreen({
               이수 완료 ✓
             </span>
           )}
-          <div style={{ fontSize: 42 }}>🦺</div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>안전교육</div>
+          <LobbyIcon src="/assets/ui/icon_edu.png" fallback="🦺" />
+          <div className={headlineFont.className} style={{ fontSize: 22 }}>안전교육</div>
           <div style={{ fontSize: 13, color: "#9fc4e8" }}>조작 연습 · 무료</div>
         </button>
 
@@ -1068,15 +1079,22 @@ function LobbyScreen({
             borderRadius: 20,
             border: eduDone ? "3px solid rgba(255,180,60,0.6)" : "3px solid rgba(255,255,255,0.08)",
             background: eduDone
-              ? "linear-gradient(180deg, rgba(224,138,30,0.35), rgba(224,138,30,0.12))"
+              ? "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(224,138,30,0.35) 30%, rgba(224,138,30,0.12) 100%)"
               : "rgba(255,255,255,0.04)",
+            boxShadow: eduDone
+              ? "inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -10px 18px rgba(0,0,0,0.18)"
+              : undefined,
             color: eduDone ? "#fff" : "#5d6b84",
             cursor: loading || !eduDone ? "default" : "pointer",
             opacity: loading ? 0.6 : 1,
           }}
         >
-          <div style={{ fontSize: 42 }}>{eduDone ? "🔥" : "🔒"}</div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>무한 잔업 모드</div>
+          {eduDone ? (
+            <LobbyIcon src="/assets/ui/icon_endless.png" fallback="🔥" />
+          ) : (
+            <div style={{ fontSize: 42 }}>🔒</div>
+          )}
+          <div className={headlineFont.className} style={{ fontSize: 22 }}>무한 잔업 모드</div>
           <div style={{ fontSize: 13, color: eduDone ? "#f0c58a" : "#5d6b84" }}>
             {eduDone ? "랭킹전 · 티켓 1장" : "안전교육 이수 후 참가 가능"}
           </div>
@@ -1085,6 +1103,23 @@ function LobbyScreen({
     </div>
   );
 }
+// E3.18-4: 로비 카드 아이콘 — 이미지 경로 우선, 파일 없으면 이모지 폴백
+function LobbyIcon({ src, fallback }: { src: string; fallback: string }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return <div style={{ fontSize: 42 }}>{fallback}</div>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      aria-hidden
+      draggable={false}
+      onError={() => setBroken(true)}
+      style={{ height: 56, width: "auto", filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.35))" }}
+    />
+  );
+}
+
 // ── S2 HUD ──
 function TopHud({ hud }: { hud: HudState }) {
   return (
@@ -1361,7 +1396,7 @@ function ClearOverlay({
           }}
         />
         <div style={{ textAlign: "left" }}>
-          <div style={{ fontSize: "clamp(20px, 5.5vh, 28px)", fontWeight: 800, color: "#ffd23f" }}>
+          <div className={headlineFont.className} style={{ fontSize: "clamp(20px, 5.5vh, 28px)", color: "#ffd23f" }}>
             🦺 안전교육 이수!
           </div>
           <div
@@ -1444,13 +1479,32 @@ function GameOverOverlay({
 
   return (
     <div style={overlayStyle} onPointerDown={(e) => e.stopPropagation()}>
-      <div style={{ fontSize: "clamp(18px, 5vh, 24px)", fontWeight: 800 }}>
+      {/* E3.18-6: outcome별 히어로 삽화 — caught는 합성 컷 재사용(E3.11-2 반응형 규칙) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        {result.outcome === "caught" && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            className="ovl-char"
+            src="/assets/sprites/fx/caught.webp"
+            alt=""
+            aria-hidden
+            draggable={false}
+            style={{
+              height: "clamp(56px, 15vh, 92px)",
+              width: "auto",
+              filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))",
+            }}
+          />
+        )}
+      <div className={headlineFont.className} style={{ fontSize: "clamp(20px, 5.6vh, 27px)" }}>
         {result.outcome === "caught"
           ? "덜미 잡힘!"
           : result.outcome === "giveup"
             ? "오늘은 여기까지!"
             : "퇴근 실패!"}
       </div>
+      </div>
+      <style>{`@media (max-height: 430px){ .ovl-char{ display: none } }`}</style>
       <div style={{ color: "#cdd8ec", fontSize: 13, marginBottom: 12 }}>
         {/* E3.6-2 수정: 교육 실패(반복 부딪힘) 전용 문구 — 재교육 유도 */}
         {result.mode === "edu"
@@ -1673,8 +1727,9 @@ const overlayStyle: React.CSSProperties = {
   WebkitOverflowScrolling: "touch",
 };
 
+// E3.18-2: 글로시 톤(그라데이션+상단 하이라이트+진한 하단 그림자) — 타이틀 버튼과 통일
 const primaryBtn: React.CSSProperties = {
-  background: "#2E66F6",
+  background: "linear-gradient(180deg, #5f8bff 0%, #2E66F6 48%, #2050d8 100%)",
   color: "#fff",
   border: "none",
   padding: "14px 24px",
@@ -1683,10 +1738,13 @@ const primaryBtn: React.CSSProperties = {
   fontWeight: 700,
   marginBottom: 12,
   cursor: "pointer",
+  boxShadow:
+    "inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.18), 0 4px 0 #16389c, 0 6px 14px rgba(0,0,0,0.35)",
+  textShadow: "0 1px 2px rgba(0,0,0,0.3)",
 };
 
 const secondaryBtn: React.CSSProperties = {
-  background: "transparent",
+  background: "linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05) 55%, rgba(255,255,255,0.09))",
   color: "#cdd8ec",
   border: "1px solid rgba(255,255,255,0.3)",
   padding: "12px 16px",
@@ -1695,17 +1753,21 @@ const secondaryBtn: React.CSSProperties = {
   fontWeight: 600,
   textAlign: "center",
   cursor: "pointer",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22), 0 3px 0 rgba(0,0,0,0.28), 0 5px 10px rgba(0,0,0,0.25)",
 };
 
 // E3.11-2: 좁은 화면에서 축소되되 3개 가로 배열 유지
 const resultCard: React.CSSProperties = {
-  background: "rgba(255,255,255,0.08)",
+  // E3.18-3: 대각선 하이라이트 + 미세 내부 그림자(플랫 rgba 대체)
+  background:
+    "linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.05) 55%, rgba(255,255,255,0.09) 100%)",
   borderRadius: 14,
   padding: "clamp(6px, 2vh, 12px) clamp(8px, 2.2vw, 18px)",
   textAlign: "center",
   minWidth: 0,
   flex: 1,
   maxWidth: 170,
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -8px 14px rgba(0,0,0,0.16)",
 };
 
 const resultLabel: React.CSSProperties = {

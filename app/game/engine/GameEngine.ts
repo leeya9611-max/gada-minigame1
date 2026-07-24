@@ -523,12 +523,14 @@ export class GameEngine {
       return;
     }
 
-    // 실패 조건 병존: HP 0 또는 gap 0(붙잡힘 — E3.6-2: 0.6s 잡힘 연출 후 오버)
-    if (this.player.hp <= 0) {
-      this.gameOver(now, "hp");
-    } else if (this.gap <= 0) {
+    // 실패 조건 병존: gap 0(붙잡힘) 우선, HP 0 차선.
+    // 마지막 피격에서 hp와 gap이 같은 프레임에 동시 소진되는 경우가 흔한데,
+    // hp를 먼저 보면 잡힘 연출이 영영 묻힌다(실측: 유저 플레이 대부분이 이 케이스).
+    if (this.gap <= 0) {
       this.caughtAt = now;
       this.say("박소장: 잡았다!!", now, 999999);
+    } else if (this.player.hp <= 0) {
+      this.gameOver(now, "hp");
     }
 
     this.pushHud();

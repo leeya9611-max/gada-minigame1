@@ -107,6 +107,9 @@ export const CHASE = {
   START_GAP: 200, // 시작 추격 거리
   MAX_GAP: 280, // 회복 상한
   RECOVER_PER_SEC: 18, // 안 맞고 달릴 때 초당 회복
+  // 붙잡힘은 실패 판정 우선순위(gap 우선, GameEngine 실패 체크)로 성립한다 —
+  // 마지막 피격에서 hp·gap이 동시 소진되는 케이스가 대부분이라 gap을 먼저 봐야
+  // "박소장에게 붙잡혔습니다"가 실제로 뜬다. (135로 올리면 hp 사망이 소멸해 과함)
   HIT_LOSS: 110, // 피격 시 크게 감소 → 즉각적 위협
   SLOW_RECOVER_FACTOR: 0.5, // 감속 중 회복 배율(상대 접근 체감)
   BOOST_RECOVER_FACTOR: 2, // 부스터 중 회복 가속
