@@ -12,6 +12,7 @@ import {
   SPAWN,
   SPEED,
   VIEW,
+  themeForRound,
 } from "./config";
 import { Background, type MapKey } from "./Background";
 import { intersects, intersectsPadded } from "./collision";
@@ -234,12 +235,13 @@ export class GameEngine {
 
   // E1: 엔들리스 "무한 잔업 모드" — 레벨 없이 절차 스폰으로 무한 진행(랭킹 본선).
   // 완주·피날레 없음, 속도는 BASE→ACCEL 램프(MAX 상한), gap·HP 실패는 동일.
-  setEndless(mapKey: MapKey = "map1") {
+  // E5: round(1~4) 전달 시 주차별 배경 팔레트 적용(로드 시 1회 굽기 — 프레임 비용 없음).
+  setEndless(mapKey: MapKey = "map1", round?: number) {
     this.mode = "endless";
     this.level = null;
     this.profile = [];
     this.lengthPx = 0;
-    this.bg = new Background(mapKey);
+    this.bg = new Background(mapKey, round ? themeForRound(round) : undefined);
     this.reset();
     this.pushHud();
   }

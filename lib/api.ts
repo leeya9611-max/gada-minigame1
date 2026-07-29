@@ -17,7 +17,8 @@ export type NativeAction =
   | "watchAdForTicket"
   | "exchangePointsForTicket"
   | "inviteFriend"
-  | "shareResult";
+  | "shareResult"
+  | "exitGame"; // E3.28: 로비 나가기 — 네이티브가 웹뷰 닫기 처리(웹은 요청만)
 
 interface NativeBridgeWindow extends Window {
   ReactNativeWebView?: { postMessage: (msg: string) => void };

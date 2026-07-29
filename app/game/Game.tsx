@@ -30,6 +30,7 @@ import {
   validateNickname,
 } from "@/lib/nickname";
 import Link from "next/link";
+import { tierOf } from "@/app/ranking/tier";
 import { Black_Han_Sans } from "next/font/google";
 
 // E3.18-1: 두꺼운 헤드라인용 한글 폰트(결과 타이틀·로비 섹션 타이틀 전용)
@@ -286,14 +287,15 @@ export default function Game({ token }: { token?: string }) {
     if (!eng || !spritesLoaded || showCharge || !eduDone) return;
     if (!consumeTicket()) return;
     playSfx("button_click");
-    eng.setEndless("map1");
+    // E5: 주차(라운드)별 배경 팔레트 — 시즌 미로드 시 원본(2주차 석양)
+    eng.setEndless("map1", season?.round);
     currentModeRef.current = "endless";
     setResult(null);
     setFlash(true);
     setScreen("game");
     eng.onTap();
     window.setTimeout(() => setFlash(false), 450);
-  }, [spritesLoaded, showCharge, eduDone, consumeTicket]);
+  }, [spritesLoaded, showCharge, eduDone, consumeTicket, season]);
 
   // E2/E3: 안전교육 — 티켓 미차감, 언제든 재입장. 전용 노선 route_edu 재생.
   const startEdu = useCallback(async () => {
@@ -473,27 +475,7 @@ export default function Game({ token }: { token?: string }) {
             {hud.dialogue && <DialogueBubble text={hud.dialogue} />}
             <ControlHints />
             {/* E3.10-2: 일시정지 — 우상단 모서리 고정, 점프 입력과 분리(stopPropagation) */}
-            {!paused && (
-              <button
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={pauseGame}
-                aria-label="일시정지"
-                style={{
-                  ...hudPanel,
-                  position: "absolute",
-                  top: 12,
-                  right: 14,
-                  border: "none",
-                  color: "#fff",
-                  fontSize: 20,
-                  lineHeight: 1,
-                  padding: "14px 13px",
-                  cursor: "pointer",
-                }}
-              >
-                ⏸
-              </button>
-            )}
+            {!paused && <PauseButton onClick={pauseGame} />}
             {paused && (
               <PauseOverlay
                 mode={currentModeRef.current}
@@ -537,6 +519,7 @@ export default function Game({ token }: { token?: string }) {
             season={season}
             onStartEdu={startEdu}
             onStartEndless={startEndless}
+            onChargeTicket={() => charge("watchAdForTicket")}
             loading={!spritesLoaded}
           />
         )}
@@ -848,7 +831,7 @@ function NicknameScreen({
               cursor: "pointer",
             }}
           >
-            다시 뽑기
+            <BtnIcon src="/assets/ui/icon_retry.png" fallback="" size={15} /> 다시 뽑기
           </button>
         </div>
       ) : (
@@ -934,6 +917,7 @@ function LobbyScreen({
   season,
   onStartEdu,
   onStartEndless,
+  onChargeTicket,
   loading,
 }: {
   nickname: string | null;
@@ -943,6 +927,7 @@ function LobbyScreen({
   season: SeasonBoard | null;
   onStartEdu: () => void;
   onStartEndless: () => void;
+  onChargeTicket: () => void;
   loading: boolean;
 }) {
   return (
@@ -951,162 +936,674 @@ function LobbyScreen({
       style={{
         position: "absolute",
         inset: 0,
-        // E3.18-5: 배경 이미지(cover) 위 반투명 그라데이션 — 파일 없으면 그라데이션만 렌더(자연 폴백)
+        // E3.18-5/E3.20-6: 배경 이미지(cover) 위 반투명 그라데이션 — 파일 없으면 그라데이션만(자연 폴백)
         backgroundColor: "#141d33",
         backgroundImage:
-          "linear-gradient(180deg, rgba(31,42,68,0.86) 0%, rgba(14,21,38,0.92) 100%), url(/assets/ui/lobby_bg.png)",
+          "linear-gradient(180deg, rgba(31,42,68,0.55) 0%, rgba(14,21,38,0.78) 100%), url(/assets/ui/lobby_bg.webp)",
         backgroundSize: "cover",
         backgroundPosition: "center",
         color: "#fff",
         display: "flex",
         flexDirection: "column",
-        padding: "14px 18px",
+        gap: 10,
+        padding: "12px 18px 14px",
       }}
     >
-      {/* 헤더: 닉네임 + 티켓 (상점 버튼 제거 — WP7 취소) */}
+      {/* ── 상단바(E3.30-4): 좌 누적 m 캡슐 / 우 티켓 재화 바 유지 ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>👷 {nickname ?? "김반장"}</div>
-          <span style={{ fontSize: 12, color: "#8fa3c4" }}>누적 {totalM.toLocaleString()}m</span>
-          {/* E4: 이번 주 내 점수·순위 + D-day (조회 실패·기록 없음 시 숨김) */}
-          {season && (
-            <Link
-              href="/ranking"
-              style={{
-                fontSize: 12,
-                color: "#ffd23f",
-                textDecoration: "none",
-                background: "rgba(255,210,63,0.12)",
-                padding: "3px 10px",
-                borderRadius: 999,
-              }}
-            >
-              🏆 {season.round}R · D-{daysLeft(season.endsAt)}
-              {season.me &&
-                ` · 이번 주 ${season.me.weekScore.toLocaleString()}점 ${season.me.rank}위`}
-            </Link>
-          )}
-        </div>
         <span
           style={{
-            background: "rgba(255,255,255,0.1)",
-            color: "#ffd23f",
-            fontSize: 14,
-            fontWeight: 800,
-            padding: "4px 12px",
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#aebfda",
+            background: "rgba(0,0,0,0.32)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1)",
+            padding: "5px 12px",
             borderRadius: 999,
+            whiteSpace: "nowrap",
           }}
         >
-          🎟 {tickets}
+          🏃 누적 {totalM.toLocaleString()}m
         </span>
+        {/* E3.28: 우상단 — 티켓 재화 바 + 나가기 버튼 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <TicketBar tickets={tickets} onCharge={onChargeTicket} />
+          <ExitButton />
+        </div>
       </div>
 
-      {/* 2버튼: 안전교육 / 무한 잔업 모드 */}
-      <div style={{ display: "flex", gap: 14, flex: 1, alignItems: "stretch", margin: "14px 0 8px" }}>
-        {/* 안전교육 */}
-        <button
-          onClick={onStartEdu}
-          disabled={loading}
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            borderRadius: 20,
-            border: "3px solid rgba(94,200,255,0.5)",
-            background:
-              "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(46,102,246,0.3) 30%, rgba(46,102,246,0.12) 100%)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -10px 18px rgba(0,0,0,0.18)",
-            color: "#fff",
-            cursor: loading ? "default" : "pointer",
-            opacity: loading ? 0.6 : 1,
-            position: "relative",
-          }}
-        >
-          {eduDone && (
-            <span
-              style={{
-                position: "absolute",
-                top: 10,
-                right: 12,
-                fontSize: 12,
-                fontWeight: 800,
-                color: "#8ee6d0",
-                background: "rgba(0,0,0,0.3)",
-                padding: "3px 10px",
-                borderRadius: 999,
-              }}
-            >
-              이수 완료 ✓
-            </span>
-          )}
-          <LobbyIcon src="/assets/ui/icon_edu.png" fallback="🦺" />
-          <div className={headlineFont.className} style={{ fontSize: 22 }}>안전교육</div>
-          <div style={{ fontSize: 13, color: "#9fc4e8" }}>조작 연습 · 무료</div>
-        </button>
+      {/* ── 라운드 게이지(E3.30-1): season 있을 때만 ── */}
+      {season && <RoundGauge round={season.round} days={daysLeft(season.endsAt)} />}
 
-        {/* 로비 대기 연출: 서류 든 김반장 (AI 시트 mixed) */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/assets/sprites/gimbanjang_custom/idle_docs.webp"
-          alt=""
-          aria-hidden
-          draggable={false}
-          style={{
-            position: "absolute",
-            left: 16,
-            bottom: 10,
-            height: 118,
-            width: "auto",
-            pointerEvents: "none",
-            filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.45))",
-          }}
-        />
+      {/* ── 메인 2분할(E3.30-2/3): 좌 캐릭터 / 우 모드 카드 세로 스택 ── */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 16 }}>
+        {/* 왼쪽: 캐릭터 크게 + 닉네임·티어 + 내 시즌 성적 */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <LobbyHero nickname={nickname} season={season} />
+        </div>
 
-        {/* 무한 잔업 모드 — 이수 전 잠금 */}
-        <button
-          onClick={onStartEndless}
-          disabled={loading || !eduDone}
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            borderRadius: 20,
-            border: eduDone ? "3px solid rgba(255,180,60,0.6)" : "3px solid rgba(255,255,255,0.08)",
-            background: eduDone
-              ? "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(224,138,30,0.35) 30%, rgba(224,138,30,0.12) 100%)"
-              : "rgba(255,255,255,0.04)",
-            boxShadow: eduDone
-              ? "inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -10px 18px rgba(0,0,0,0.18)"
-              : undefined,
-            color: eduDone ? "#fff" : "#5d6b84",
-            cursor: loading || !eduDone ? "default" : "pointer",
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-          {eduDone ? (
-            <LobbyIcon src="/assets/ui/icon_endless.png" fallback="🔥" />
-          ) : (
-            <div style={{ fontSize: 42 }}>🔒</div>
-          )}
-          <div className={headlineFont.className} style={{ fontSize: 22 }}>무한 잔업 모드</div>
-          <div style={{ fontSize: 13, color: eduDone ? "#f0c58a" : "#5d6b84" }}>
-            {eduDone ? "랭킹전 · 티켓 1장" : "안전교육 이수 후 참가 가능"}
-          </div>
-        </button>
+        {/* 오른쪽: 랭킹보기(작게) → 안전교육 → 무한 잔업 세로 스택 */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+          <Link
+            href="/ranking"
+            style={{
+              alignSelf: "flex-end",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              // E3.28-3: 20~30% 확대 — fontSize 13→16, padding 7×16→9×21
+              fontSize: 16,
+              fontWeight: 800,
+              color: "#fff",
+              textShadow: "0 1px 2px rgba(0,0,0,0.35)",
+              textDecoration: "none",
+              // E3.25-1: cta_primary border-image — 파일 없으면 골드 그라데이션 폴백
+              background: "linear-gradient(180deg, #ffe58a 0%, #ffd23f 45%, #eab308 100%)",
+              boxShadow: "0 3px 0 rgba(10,16,30,0.45), 0 5px 10px rgba(0,0,0,0.35)",
+              padding: "9px 21px",
+              borderRadius: 21,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+              ...ctaImg("cta_primary"),
+            }}
+          >
+            🏆 랭킹보기
+          </Link>
+
+          <button
+            onClick={onStartEdu}
+            disabled={loading}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 14,
+              borderRadius: 18,
+              // E3.24-3: cta_edu(#135dc3) 톤으로 강조색 통일
+              border: "2px solid rgba(94,180,255,0.55)",
+              background:
+                "linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(19,93,195,0.48) 30%, rgba(14,70,150,0.32) 100%)",
+              boxShadow: "inset 0 2px 0 rgba(255,255,255,0.22), inset 0 -6px 12px rgba(0,0,0,0.22), 0 4px 10px rgba(0,0,0,0.3)",
+              color: "#fff",
+              cursor: loading ? "default" : "pointer",
+              opacity: loading ? 0.6 : 1,
+              position: "relative",
+            }}
+          >
+            {eduDone && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 12,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  // E3.26-1: 리본 배경 철회 — 단순 반투명 캡슐
+                  color: "#8ee6d0",
+                  background: "rgba(0,0,0,0.3)",
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                }}
+              >
+                이수 완료 ✓
+              </span>
+            )}
+            <LobbyIcon src="/assets/ui/icon_edu.png" fallback="🦺" size={48} />
+            <div style={{ textAlign: "left", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3 }}>
+              <CardWordmark src="/assets/ui/wordmark_edu.png" text="안전교육" />
+              <div style={{ fontSize: 12.5, color: "#9fc4e8" }}>조작 연습 · 무료</div>
+            </div>
+          </button>
+
+          <button
+            onClick={onStartEndless}
+            disabled={loading || !eduDone}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 14,
+              borderRadius: 18,
+              // E3.24-3: cta_endless(#dc4f35) 톤으로 강조색 통일
+              border: eduDone ? "2px solid rgba(255,130,95,0.6)" : "2px solid rgba(255,255,255,0.08)",
+              background: eduDone
+                ? "linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(220,79,53,0.45) 30%, rgba(175,52,32,0.3) 100%)"
+                : "rgba(255,255,255,0.04)",
+              boxShadow: eduDone
+                ? "inset 0 2px 0 rgba(255,255,255,0.22), inset 0 -6px 12px rgba(0,0,0,0.22), 0 4px 10px rgba(0,0,0,0.3)"
+                : undefined,
+              color: eduDone ? "#fff" : "#5d6b84",
+              cursor: loading || !eduDone ? "default" : "pointer",
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {eduDone ? (
+              <LobbyIcon src="/assets/ui/icon_endless.png" fallback="🔥" size={48} />
+            ) : (
+              <LobbyIcon src="/assets/ui/icon_lock.png" fallback="🔒" size={44} />
+            )}
+            <div style={{ textAlign: "left", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3 }}>
+              {eduDone ? (
+                <CardWordmark src="/assets/ui/wordmark_endless.png" text="무한 잔업 모드" />
+              ) : (
+                // 잠금 상태: 워드마크 컬러가 활성처럼 보이므로 기존 회색 텍스트 유지
+                <div className={headlineFont.className} style={{ fontSize: 22 }}>무한 잔업 모드</div>
+              )}
+              <div style={{ fontSize: 12.5, color: eduDone ? "#f0c58a" : "#5d6b84" }}>
+                {eduDone ? "랭킹전 · 티켓 1장" : "안전교육 이수 후 참가 가능"}
+              </div>
+            </div>
+          </button>
+        </div>
       </div>
     </div>
   );
 }
-// E3.18-4: 로비 카드 아이콘 — 이미지 경로 우선, 파일 없으면 이모지 폴백
-function LobbyIcon({ src, fallback }: { src: string; fallback: string }) {
+
+// E3.28-4: 티켓 재화 바 — [티켓 아이콘][진한 캡슐 숫자][+ 버튼]. 아이콘·버튼은 이미지 폴백.
+function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => void }) {
+  const [iconBroken, setIconBroken] = useState(false);
+  const [plusBroken, setPlusBroken] = useState(false);
+  return (
+    <div style={{ display: "flex", alignItems: "center" }}>
+      {/* 좌: 티켓 아이콘(캡슐에 절반 겹침) */}
+      {iconBroken ? (
+        <span style={{ fontSize: 22, zIndex: 1, marginRight: -10, filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.5))" }}>
+          🎟
+        </span>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/assets/ui/ticket_icon.png"
+          alt=""
+          aria-hidden
+          draggable={false}
+          onError={() => setIconBroken(true)}
+          style={{
+            height: 26,
+            width: "auto",
+            zIndex: 1,
+            marginRight: -14,
+            filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.5))",
+          }}
+        />
+      )}
+      {/* 중: 진한 캡슐 바 + 숫자 */}
+      <span
+        style={{
+          background: "rgba(0,0,0,0.55)",
+          border: "1px solid rgba(255,255,255,0.18)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -2px 4px rgba(0,0,0,0.4)",
+          color: "#ffd23f",
+          fontSize: 14,
+          fontWeight: 800,
+          padding: "4px 20px 4px 22px",
+          borderRadius: 999,
+          textShadow: "0 1px 2px rgba(0,0,0,0.4)",
+          whiteSpace: "nowrap",
+          minWidth: 64,
+          textAlign: "center",
+        }}
+      >
+        {tickets}
+      </span>
+      {/* 우: 원형 + 버튼 → 광고 시청 요청(랭킹 페이지와 동일 동작) */}
+      <button
+        onClick={onCharge}
+        aria-label="티켓 충전"
+        style={{
+          border: "none",
+          background: "transparent",
+          padding: 0,
+          marginLeft: -13,
+          zIndex: 1,
+          cursor: "pointer",
+          lineHeight: 0,
+        }}
+      >
+        {plusBroken ? (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 26,
+              height: 26,
+              borderRadius: "50%",
+              background: "linear-gradient(180deg, #58d685 0%, #2fae5c 100%)",
+              border: "1.5px solid rgba(255,255,255,0.45)",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
+              color: "#fff",
+              fontSize: 17,
+              fontWeight: 900,
+              lineHeight: 1,
+            }}
+          >
+            +
+          </span>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src="/assets/ui/btn_plus.png"
+            alt=""
+            aria-hidden
+            draggable={false}
+            onError={() => setPlusBroken(true)}
+            style={{ height: 27, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.45))" }}
+          />
+        )}
+      </button>
+    </div>
+  );
+}
+
+// E3.28-1: 나가기 버튼 — 네이티브로 exitGame 액션만 전달(웹은 결과 처리 안 함)
+function ExitButton() {
   const [broken, setBroken] = useState(false);
-  if (broken) return <div style={{ fontSize: 42 }}>{fallback}</div>;
+  return (
+    <button
+      onClick={() => requestNativeAction("exitGame")}
+      aria-label="나가기"
+      style={{
+        border: "none",
+        background: "transparent",
+        padding: 0,
+        cursor: "pointer",
+        lineHeight: 0,
+      }}
+    >
+      {broken ? (
+        <span
+          style={{
+            display: "inline-block",
+            fontSize: 12,
+            fontWeight: 800,
+            color: "#cdd8ec",
+            background: "rgba(0,0,0,0.4)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            padding: "6px 12px",
+            borderRadius: 999,
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          ✕ 나가기
+        </span>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/assets/ui/icon_exit.png"
+          alt=""
+          aria-hidden
+          draggable={false}
+          onError={() => setBroken(true)}
+          style={{ height: 34, width: "auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.45))" }}
+        />
+      )}
+    </button>
+  );
+}
+
+// E3.30-1: 한 달 챌린지 라운드 게이지 — gauge_track 금속 프레임 + 헬멧 배지 마커 4개 + 채움 오버레이.
+// 트랙/마커 이미지 없으면 CSS 바·🪖 이모지 폴백. 화면 가운데 최대 폭 제한.
+function RoundGauge({ round, days }: { round: number; days: number }) {
+  const TOTAL = 4; // 한 달 = 4주(라운드)
+  const cur = Math.max(1, Math.min(TOTAL, round));
+  const fillPct = (cur / TOTAL) * 100;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        flexShrink: 0,
+        maxWidth: 470,
+        width: "100%",
+        margin: "0 auto",
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.05 }}>
+        <span
+          className={headlineFont.className}
+          style={{ fontSize: 26, color: "#ffd23f", textShadow: "0 2px 4px rgba(0,0,0,0.65)" }}
+        >
+          D-{days}
+        </span>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: "#aebfda", whiteSpace: "nowrap" }}>
+          {cur}/{TOTAL} 라운드
+        </span>
+      </div>
+      <div style={{ position: "relative", flex: 1, aspectRatio: "1400 / 230", minHeight: 30, maxHeight: 44 }}>
+        {/* CSS 폴백 트랙(이미지 로드 시 프레임이 위를 덮음) */}
+        <div
+          style={{
+            position: "absolute",
+            inset: "26% 1.5%",
+            borderRadius: 999,
+            background: "rgba(0,0,0,0.5)",
+            border: "1px solid rgba(255,255,255,0.12)",
+          }}
+        />
+        {/* 금속 프레임 트랙 */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/assets/ui/gauge_track.webp"
+          alt=""
+          aria-hidden
+          draggable={false}
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+        />
+        {/* 채움 오버레이 — 트랙 안쪽 슬롯 inset에 맞춤, 현재 라운드 진행률 */}
+        <div
+          style={{
+            position: "absolute",
+            top: "27%",
+            bottom: "27%",
+            left: "4.5%",
+            width: `${fillPct * 0.91}%`,
+            borderRadius: 999,
+            background: "linear-gradient(90deg, #ffe066 0%, #ff9500 100%)",
+            boxShadow: "0 0 10px rgba(255,180,60,0.55)",
+          }}
+        />
+        {/* 헬멧 배지 마커 4개 — 도달 라운드 active, 이후 locked */}
+        {Array.from({ length: TOTAL }, (_, i) => {
+          const reached = i + 1 <= cur;
+          const left = 4.5 + ((i + 0.5) / TOTAL) * 91;
+          return <RoundMarker key={i} reached={reached} left={left} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
+// E3.30-1: 게이지 마커 — round_marker_{active,locked}.png, 없으면 🪖 이모지 폴백
+function RoundMarker({ reached, left }: { reached: boolean; left: number }) {
+  const [broken, setBroken] = useState(false);
+  const common: React.CSSProperties = {
+    position: "absolute",
+    top: "50%",
+    left: `${left}%`,
+    transform: "translate(-50%, -50%)",
+  };
+  if (broken) {
+    return (
+      <span
+        style={{
+          ...common,
+          fontSize: 22,
+          filter: reached ? "drop-shadow(0 2px 3px rgba(0,0,0,0.55))" : "grayscale(1) opacity(0.4)",
+        }}
+      >
+        🪖
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`/assets/ui/round_marker_${reached ? "active" : "locked"}.png`}
+      alt=""
+      aria-hidden
+      draggable={false}
+      onError={() => setBroken(true)}
+      style={{
+        ...common,
+        height: "118%",
+        width: "auto",
+        filter: reached ? "drop-shadow(0 2px 4px rgba(0,0,0,0.5))" : "opacity(0.75)",
+      }}
+    />
+  );
+}
+
+// E3.30-3: 카드 타이틀 워드마크 — 이미지 우선, 없으면 기존 헤드라인 텍스트 폴백
+function CardWordmark({ src, text }: { src: string; text: string }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) {
+    return (
+      <div className={headlineFont.className} style={{ fontSize: 22 }}>
+        {text}
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={text}
+      draggable={false}
+      onError={() => setBroken(true)}
+      style={{
+        height: "clamp(32px, 5.5vh, 40px)",
+        width: "auto",
+        maxWidth: "100%",
+        objectFit: "contain",
+        filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.35))",
+      }}
+    />
+  );
+}
+
+// E3.30-2: 로비 좌측 히어로 — 캐릭터 크게 + 닉네임 캡슐(머리 위) + 티어 배지·시즌 성적(발밑)
+function LobbyHero({ nickname, season }: { nickname: string | null; season: SeasonBoard | null }) {
+  const tier = tierOf(season?.me?.weekScore ?? 0);
+  const [charBroken, setCharBroken] = useState(false);
+  const [badgeBroken, setBadgeBroken] = useState(false);
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+        position: "relative",
+        zIndex: 1,
+        pointerEvents: "none",
+      }}
+    >
+      {/* 닉네임 말풍선 캡슐 */}
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 800,
+          background: "rgba(0,0,0,0.42)",
+          border: "1px solid rgba(255,255,255,0.2)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
+          padding: "6px 18px",
+          borderRadius: 999,
+          whiteSpace: "nowrap",
+          textShadow: "0 1px 2px rgba(0,0,0,0.5)",
+        }}
+      >
+        👷 {nickname ?? "김반장"}
+      </div>
+      {/* 캐릭터 + 발밑 스포트라이트 — 2분할 좌측 폭을 채우도록 확대 */}
+      <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: 240,
+            height: 52,
+            background: "radial-gradient(ellipse at center, rgba(255,220,120,0.5) 0%, rgba(255,220,120,0.16) 55%, rgba(0,0,0,0) 75%)",
+            pointerEvents: "none",
+          }}
+        />
+        {charBroken ? (
+          <div style={{ fontSize: "clamp(96px, 34vh, 150px)", lineHeight: 1.2, position: "relative" }}>👷</div>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src="/assets/sprites/gimbanjang_custom/idle_docs.webp"
+            alt=""
+            aria-hidden
+            draggable={false}
+            onError={() => setCharBroken(true)}
+            style={{
+              height: "100%",
+              maxHeight: "clamp(140px, 40vh, 260px)",
+              width: "auto",
+              maxWidth: "100%",
+              objectFit: "contain",
+              position: "relative",
+              filter: "drop-shadow(0 6px 11px rgba(0,0,0,0.42))",
+            }}
+          />
+        )}
+      </div>
+      {/* 티어 배지 + 내 시즌 성적 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+        {/* E3.28-2: 25% 확대 + 티어 컬러 글로우 */}
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 15,
+            fontWeight: 800,
+            color: tier.color,
+            background: "rgba(0,0,0,0.42)",
+            border: `1px solid ${tier.color}88`,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.1), 0 0 14px ${tier.color}59, 0 0 4px ${tier.color}40`,
+            padding: "4px 14px 4px 6px",
+            borderRadius: 999,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {badgeBroken ? (
+            <span style={{ fontSize: 18 }}>{tier.emoji}</span>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`/assets/ui/tier_${tier.key}.png`}
+              alt=""
+              aria-hidden
+              draggable={false}
+              onError={() => setBadgeBroken(true)}
+              style={{ width: 30, height: 30, objectFit: "contain" }}
+            />
+          )}
+          {tier.label}
+        </span>
+        {season?.me && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#ffd23f",
+              textShadow: "0 1px 3px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.7)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            이번 주 {season.me.weekScore.toLocaleString()}점 · {season.me.rank}위
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// E3.27-2: 인게임 일시정지 버튼 — icon_pause.png가 자체 배경(오렌지 버튼)을 가진 완결형 그래픽이라
+// hudPanel 회색 박스 없이 아이콘만 띄운다(이중 박스 방지). 폴백(⏸ 이모지)일 때만 박스를 붙인다.
+function PauseButton({ onClick }: { onClick: () => void }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <button
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={onClick}
+      aria-label="일시정지"
+      style={{
+        position: "absolute",
+        top: 12,
+        right: 14,
+        border: "none",
+        cursor: "pointer",
+        lineHeight: 0,
+        ...(broken
+          ? { ...hudPanel, color: "#fff", fontSize: 20, padding: "12px 11px" }
+          : { background: "transparent", padding: 0 }),
+      }}
+    >
+      {broken ? (
+        <span aria-hidden>⏸</span>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/assets/ui/icon_pause.png"
+          alt=""
+          aria-hidden
+          draggable={false}
+          onError={() => setBroken(true)}
+          style={{ width: 42, height: 45, objectFit: "contain", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))" }}
+        />
+      )}
+    </button>
+  );
+}
+
+// E3.26-2: 완주 화면 세로 리본 배지 — ribbon_gold 자연 비율(380×400), 안에 짧은 2줄 텍스트.
+// 파일 없으면 통째로 숨김(타이틀 텍스트가 정보를 전달하므로 장식만 빠짐).
+function RibbonBadge({ lines }: { lines: [string, string] }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return null;
+  return (
+    <div
+      style={{
+        position: "relative",
+        height: "clamp(64px, 19vh, 88px)",
+        aspectRatio: "380 / 400",
+        flexShrink: 0,
+        filter: "drop-shadow(0 3px 8px rgba(0,0,0,0.4))",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/assets/ui/ribbon_gold.png"
+        alt=""
+        aria-hidden
+        draggable={false}
+        onError={() => setBroken(true)}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      />
+      {/* 리본 밴드(포크 제외 상단 ~60%) 안에 2줄 텍스트 */}
+      <div
+        style={{
+          position: "absolute",
+          inset: "10% 8% 34%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#6b3f0c",
+          fontWeight: 900,
+          fontSize: "clamp(13px, 3.8vh, 17px)",
+          lineHeight: 1.3,
+          textShadow: "0 1px 0 rgba(255,255,255,0.35)",
+        }}
+      >
+        <span>{lines[0]}</span>
+        <span>{lines[1]}</span>
+      </div>
+    </div>
+  );
+}
+
+// E3.24-4: 버튼 인라인 아이콘 — 텍스트 앞에 작게, 파일 없으면 이모지(또는 무표시) 폴백
+function BtnIcon({ src, fallback, size = 18 }: { src: string; fallback: string; size?: number }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return fallback ? <span aria-hidden>{fallback}</span> : null;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -1115,7 +1612,24 @@ function LobbyIcon({ src, fallback }: { src: string; fallback: string }) {
       aria-hidden
       draggable={false}
       onError={() => setBroken(true)}
-      style={{ height: 56, width: "auto", filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.35))" }}
+      style={{ width: size, height: size, objectFit: "contain", verticalAlign: "-0.18em" }}
+    />
+  );
+}
+
+// E3.18-4: 로비 카드 아이콘 — 이미지 경로 우선, 파일 없으면 이모지 폴백
+function LobbyIcon({ src, fallback, size = 56 }: { src: string; fallback: string; size?: number }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return <div style={{ fontSize: size * 0.75 }}>{fallback}</div>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      aria-hidden
+      draggable={false}
+      onError={() => setBroken(true)}
+      style={{ height: size, width: "auto", filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.35))" }}
     />
   );
 }
@@ -1395,9 +1909,11 @@ function ClearOverlay({
             filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))",
           }}
         />
+        {/* E3.26-2: ribbon_gold 세로 배지(자연 비율) — 조끼 이모지 역할 대체, 파일 없으면 숨김 */}
+        <RibbonBadge lines={["교육", "이수"]} />
         <div style={{ textAlign: "left" }}>
           <div className={headlineFont.className} style={{ fontSize: "clamp(20px, 5.5vh, 28px)", color: "#ffd23f" }}>
-            🦺 안전교육 이수!
+            안전교육 이수!
           </div>
           <div
             style={{
@@ -1411,6 +1927,24 @@ function ClearOverlay({
             {justUnlocked ? "🔓 무한 잔업 모드 개방!" : "박소장을 따돌리고 무사 퇴근했습니다"}
           </div>
         </div>
+        {/* E3.24-6: 완주 장식 트로피 — 파일 없으면 숨김 */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className="ovl-char"
+          src="/assets/ui/trophy.png"
+          alt=""
+          aria-hidden
+          draggable={false}
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+          style={{
+            height: "clamp(44px, 13vh, 80px)",
+            width: "auto",
+            animation: "starPop 0.5s 0.15s cubic-bezier(.34,1.56,.64,1) both",
+            filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))",
+          }}
+        />
       </div>
       <style>{`@media (max-height: 430px){ .ovl-char{ display: none } }`}</style>
 
@@ -1440,7 +1974,10 @@ function ClearOverlay({
       </div>
 
       <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 500 }}>
-        <button onClick={onGoEndless} style={{ ...primaryBtn, flex: 1.4, marginBottom: 0, background: "#e08a1e" }}>
+        <button
+          onClick={onGoEndless}
+          style={{ ...primaryBtn, flex: 1.4, marginBottom: 0, background: "#dc4f35", ...ctaImg("cta_endless") }}
+        >
           🔥 무한 잔업 모드 가기 (🎟 1)
         </button>
         <button onClick={onRetryEdu} style={{ ...secondaryBtn, flex: 1 }}>
@@ -1588,6 +2125,7 @@ function GameOverOverlay({
 
       <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 500 }}>
         <button onClick={onRestart} style={{ ...primaryBtn, flex: 1.2, marginBottom: 0 }}>
+          <BtnIcon src="/assets/ui/icon_retry.png" fallback="" size={16} />{" "}
           {result.mode === "edu" ? "다시 연습 (무료)" : "다시 도전 (🎟 1)"}
         </button>
         <button onClick={onLobby} style={{ ...secondaryBtn, flex: 1 }}>
@@ -1619,7 +2157,9 @@ function PauseOverlay({
       style={{ ...overlayStyle, background: "rgba(14,21,38,0.82)", zIndex: 40 }}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 4 }}>⏸ 일시정지</div>
+      <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 4 }}>
+        <BtnIcon src="/assets/ui/icon_pause.png" fallback="⏸" size={26} /> 일시정지
+      </div>
       <div style={{ color: "#8fa3c4", fontSize: 13, marginBottom: 18 }}>
         {mode === "endless"
           ? "포기하면 현재 기록으로 마감돼요"
@@ -1627,9 +2167,10 @@ function PauseOverlay({
       </div>
       <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 420 }}>
         <button onClick={onResume} style={{ ...primaryBtn, flex: 1.4, marginBottom: 0 }}>
-          ▶ 계속하기
+          <BtnIcon src="/assets/ui/icon_play.png" fallback="▶" size={17} /> 계속하기
         </button>
         <button onClick={onGiveUp} style={{ ...secondaryBtn, flex: 1 }}>
+          <BtnIcon src="/assets/ui/icon_exit.png" fallback="" size={15} />{" "}
           {mode === "endless" ? "포기 (기록 저장)" : "포기"}
         </button>
       </div>
@@ -1728,19 +2269,27 @@ const overlayStyle: React.CSSProperties = {
 };
 
 // E3.18-2: 글로시 톤(그라데이션+상단 하이라이트+진한 하단 그림자) — 타이틀 버튼과 통일
+// E3.24-1/2: CTA 배경을 pill 이미지 3-slice border-image로 — 좌우 캡(75px)만 자르고 세로는 통짜라
+// 세로 그라데이션이 안 찌그러진다. 레이아웃 border는 0이라 파일이 없으면 기존 그라데이션 그대로 폴백.
+const ctaImg = (name: string): React.CSSProperties => ({
+  borderImage: `url(/assets/ui/${name}.png) 0 75 fill / 0 24px stretch`,
+});
+
 const primaryBtn: React.CSSProperties = {
   background: "linear-gradient(180deg, #5f8bff 0%, #2E66F6 48%, #2050d8 100%)",
   color: "#fff",
   border: "none",
   padding: "14px 24px",
-  borderRadius: 999,
+  // 24px: cta 이미지 캡 곡률과 일치 — 999면 폴백 그라데이션이 이미지 모서리 밖으로 비침
+  borderRadius: 24,
   fontSize: 17,
   fontWeight: 700,
   marginBottom: 12,
   cursor: "pointer",
   boxShadow:
-    "inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.18), 0 4px 0 #16389c, 0 6px 14px rgba(0,0,0,0.35)",
+    "inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.18), 0 4px 0 rgba(10,16,30,0.5), 0 6px 14px rgba(0,0,0,0.35)",
   textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+  ...ctaImg("cta_primary"),
 };
 
 const secondaryBtn: React.CSSProperties = {
@@ -1748,12 +2297,13 @@ const secondaryBtn: React.CSSProperties = {
   color: "#cdd8ec",
   border: "1px solid rgba(255,255,255,0.3)",
   padding: "12px 16px",
-  borderRadius: 999,
+  borderRadius: 22,
   fontSize: 15,
   fontWeight: 600,
   textAlign: "center",
   cursor: "pointer",
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22), 0 3px 0 rgba(0,0,0,0.28), 0 5px 10px rgba(0,0,0,0.25)",
+  ...ctaImg("cta_secondary"),
 };
 
 // E3.11-2: 좁은 화면에서 축소되되 3개 가로 배열 유지

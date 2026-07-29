@@ -141,6 +141,25 @@ export const SEASON = {
 // 법무 결론에 따라 false로 되돌리면 기존 동작(예상 포인트 표시·포인트 교환 버튼) 복귀.
 export const REWARD_SAFE_MODE = true;
 
+// E5: 라운드(주차)별 엔들리스 배경 팔레트 스왑(기획 5.1) — 에셋 추가 없이 매주 배경 변주.
+// 원본 아트가 석양 톤이라 2주차가 원본. hue: 색상 회전(deg), 이후 saturate → brightness 순 적용.
+// 렌더는 로드 시 오프스크린 캔버스에 1회 굽는 캐시 방식 — 프레임 비용 0(ctx.filter 미사용).
+export interface RoundTheme {
+  name: string;
+  hue: number; // hue-rotate (deg)
+  saturate: number; // 1 = 원본
+  brightness: number; // 1 = 원본
+}
+export const ROUND_THEMES: RoundTheme[] = [
+  { name: "day", hue: -6, saturate: 0.78, brightness: 1.22 }, // 1주차: 낮(볕에 바랜 톤)
+  { name: "sunset", hue: 0, saturate: 1, brightness: 1 }, // 2주차: 석양(원본)
+  { name: "dusk", hue: -48, saturate: 1.02, brightness: 0.78 }, // 3주차: 황혼(자주 기움 — 양수는 올리브가 됨)
+  { name: "night", hue: 160, saturate: 0.5, brightness: 0.52 }, // 4주차: 야간(청색)
+];
+export function themeForRound(round: number): RoundTheme {
+  return ROUND_THEMES[Math.max(0, Math.min(ROUND_THEMES.length - 1, round - 1))];
+}
+
 // WP6 노선(스테이지) 진행
 export const ROUTE = {
   FINALE_START: 0.75, // 피날레 돌진 시작(진행도)

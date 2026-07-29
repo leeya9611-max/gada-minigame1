@@ -130,22 +130,30 @@ function RankingBoard() {
             </div>
           </header>
           {/* 하단 캐릭터 — 좁은 화면에선 축소·숨김(E3.11-2 규칙) */}
+          {/* E3.30: 트로피 든 김반장(ranking_hero) — 파일 없으면 기존 cheer로 폴백 */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             className="rk-char"
-            src="/assets/sprites/gimbanjang_custom/cheer.webp"
+            src="/assets/ui/ranking_hero.webp"
+            onError={(e) => {
+              if (!e.currentTarget.src.endsWith("cheer.webp"))
+                e.currentTarget.src = "/assets/sprites/gimbanjang_custom/cheer.webp";
+            }}
             alt=""
             aria-hidden
             draggable={false}
             style={{
-              height: "clamp(150px, 42vh, 260px)",
+              // E4-11: 62vh로 확대(하한 160·상한 360) + 하단 여백 — 발끝이 화면 경계에서 떨어지게
+              height: "clamp(160px, 62vh, 360px)",
               width: "auto",
               alignSelf: "center",
               marginLeft: "-8%",
+              marginBottom: 14,
               filter: "drop-shadow(0 8px 18px rgba(0,0,0,0.5))",
             }}
           />
-          <style>{`@media (max-height: 430px){ .rk-char{ display: none } }`}</style>
+          {/* E4-9: 숨김 기준 430→320px — 정말 극단적으로 낮은 화면에서만 숨김 */}
+          <style>{`@media (max-height: 320px){ .rk-char{ display: none } }`}</style>
         </div>
 
         {/* ── 우측: 통합 패널(내 정보 + 티켓 + 순위 리스트) — 프레임은 이쪽에만 ── */}
@@ -183,12 +191,12 @@ function RankingBoard() {
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#ffd23f", whiteSpace: "nowrap" }}>🎟 {tickets}</div>
-              <button onClick={charge("watchAdForTicket")} style={{ ...chargeBtn("#2E66F6"), flex: "none", padding: "6px 12px", fontSize: 12, marginTop: 4 }}>
-                📺 광고 +1
+              <button onClick={charge("watchAdForTicket")} style={{ ...chargeBtn("cta_primary", "#2E66F6"), flex: "none", padding: "6px 12px", fontSize: 12, marginTop: 4 }}>
+                <VideoIcon /> 광고 +1
               </button>
               {/* E4-5 세이프 모드: 포인트 교환 숨김(코드 보관) — 플래그 해제 시 복귀 */}
               {!REWARD_SAFE_MODE && (
-                <button onClick={charge("exchangePointsForTicket")} style={{ ...chargeBtn("#3c4a63"), flex: "none", padding: "6px 12px", fontSize: 12, marginTop: 4, marginLeft: 6 }}>
+                <button onClick={charge("exchangePointsForTicket")} style={{ ...chargeBtn("cta_secondary", "#3c4a63"), flex: "none", padding: "6px 12px", fontSize: 12, marginTop: 4, marginLeft: 6 }}>
                   💰 교환 +1
                 </button>
               )}
@@ -256,9 +264,17 @@ function RankingBoard() {
               ))}
           </ul>
 
-          {/* 내 순위 고정 행(목록 스크롤과 무관하게 하단 고정) */}
+          {/* 내 순위 고정 행(목록 스크롤과 무관하게 하단 고정) — E4-12: 어두운 깔개로 목록과 분리 */}
           {me && (
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: 6, marginTop: 6 }}>
+            <div
+              style={{
+                borderTop: "1px solid rgba(255,255,255,0.1)",
+                background: "rgba(0,0,0,0.15)",
+                borderRadius: "0 0 10px 10px",
+                padding: "6px 4px 4px",
+                margin: "6px -4px 0",
+              }}
+            >
               <RankRow rank={me.rank} name={nickname ?? "나"} score={me.weekScore} me pinned />
             </div>
           )}
@@ -292,17 +308,24 @@ function RankRow({
         padding: "9px 12px",
         borderRadius: 12,
         // E4-6: 은은한 대각선 텍스처(플랫 rgba 대체) + 상위 3위 티어 컬러 글로우
-        background: me
-          ? "linear-gradient(135deg, rgba(95,139,255,0.3), rgba(46,102,246,0.16) 60%, rgba(46,102,246,0.24))"
-          : "linear-gradient(135deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035) 55%, rgba(255,255,255,0.06))",
-        border: me
-          ? "1px solid #2E66F6"
+        // E4-12: 하단 고정 행(pinned)은 골드 톤 — 목록 안 내 행(파랑)과 시각 분리
+        background: pinned
+          ? "linear-gradient(135deg, rgba(255,210,63,0.22), rgba(255,180,40,0.1) 60%, rgba(255,210,63,0.16))"
+          : me
+            ? "linear-gradient(135deg, rgba(95,139,255,0.3), rgba(46,102,246,0.16) 60%, rgba(46,102,246,0.24))"
+            : "linear-gradient(135deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035) 55%, rgba(255,255,255,0.06))",
+        border: pinned
+          ? "1px solid #ffd23f99"
+          : me
+            ? "1px solid #2E66F6"
+            : top3
+              ? `1px solid ${t.color}66`
+              : "1px solid transparent",
+        boxShadow: pinned
+          ? "0 0 10px rgba(255,210,63,0.22), inset 0 1px 0 rgba(255,255,255,0.12)"
           : top3
-            ? `1px solid ${t.color}66`
-            : "1px solid transparent",
-        boxShadow: top3
-          ? `0 0 10px ${t.color}40, inset 0 1px 0 rgba(255,255,255,0.1)`
-          : "inset 0 1px 0 rgba(255,255,255,0.07)",
+            ? `0 0 10px ${t.color}40, inset 0 1px 0 rgba(255,255,255,0.1)`
+            : "inset 0 1px 0 rgba(255,255,255,0.07)",
         listStyle: "none",
       }}
     >
@@ -393,12 +416,13 @@ const statValue: React.CSSProperties = {
   fontVariantNumeric: "tabular-nums",
 };
 
-// E4-6: 글로시 버튼(E3.18 톤 통일) — 그라데이션 + 상단 하이라이트 + 하단 그림자
-function chargeBtn(bg: string): React.CSSProperties {
+// E4-6 → E3.25-2: CTA 이미지 border-image(좌우 캡 3-slice) — 파일 없으면 기존 글로시 그라데이션(bg) 폴백
+function chargeBtn(cta: string, bg: string): React.CSSProperties {
   return {
     flex: 1,
     border: "none",
-    borderRadius: 12,
+    // 16px: cta 이미지 캡 곡률과 일치(폴백 그라데이션 모서리 비침 방지)
+    borderRadius: 16,
     padding: "10px 0",
     background: `linear-gradient(180deg, rgba(255,255,255,0.28) 0%, ${bg} 45%, ${bg} 100%)`,
     color: "#fff",
@@ -407,10 +431,28 @@ function chargeBtn(bg: string): React.CSSProperties {
     boxShadow: "inset 0 1px 0 rgba(255,255,255,0.3), 0 3px 0 rgba(0,0,0,0.3), 0 5px 10px rgba(0,0,0,0.25)",
     textShadow: "0 1px 2px rgba(0,0,0,0.3)",
     cursor: "pointer",
+    borderImage: `url(/assets/ui/${cta}.png) 0 75 fill / 0 16px stretch`,
   };
 }
 
 // E4-6: 티어 배지 — 이미지(/assets/ui/tier_{key}.png) 우선, 없으면 기존 원형+이모지 폴백
+// E3.24-4: 광고 시청 버튼 아이콘 — 파일 없으면 📺 폴백
+function VideoIcon() {
+  const [broken, setBroken] = useState(false);
+  if (broken) return <span aria-hidden>📺</span>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/assets/ui/icon_video.png"
+      alt=""
+      aria-hidden
+      draggable={false}
+      onError={() => setBroken(true)}
+      style={{ width: 14, height: 14, objectFit: "contain", verticalAlign: "-2px" }}
+    />
+  );
+}
+
 function TierBadge({ tier }: { tier: ReturnType<typeof tierOf> }) {
   const [broken, setBroken] = useState(false);
   if (broken) {
