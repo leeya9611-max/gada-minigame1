@@ -21,8 +21,8 @@ export const PHYSICS = {
 
 export const SPEED = {
   BASE: 300, // 월드 스크롤 기본 속도 px/s
-  MAX: 620,
-  ACCEL: 4, // 시간당 가속 (px/s per s)
+  MAX: 560, // E6-2: 620→560 — 후반 반응 시간 확보
+  ACCEL: 3, // E6-2: 4→3 — 시간당 가속 (px/s per s)
   SLOW_FACTOR: 0.55, // 다방커피/충돌 시 감속 배율
   SLOW_MS: 1500, // 감속 지속 시간
 } as const;
@@ -39,8 +39,8 @@ export const PLAYER = {
 
 export const SPAWN = {
   // E3.5: 전방 시야 감소(−132px) 보정 — 스폰 간격 확대
-  OBSTACLE_MIN_MS: 1100,
-  OBSTACLE_MAX_MS: 2000,
+  OBSTACLE_MIN_MS: 1400, // E6-2: 1100→1400
+  OBSTACLE_MAX_MS: 2400, // E6-2: 2000→2400
   // E3.16-3: 코인 밀도 증가(700~1500 → 500~1100). 상대 순위 게임이라 점수 인플레 무해
   COIN_MIN_MS: 500,
   COIN_MAX_MS: 1100,
@@ -62,9 +62,9 @@ export const SPAWN = {
 // 슬라이드 위협은 lowbar·obs_air가 담당.
 export const PROJECTILE = {
   GRACE_MS: 4000, // 시작 직후 이 시간 동안은 투척 없음(온보딩)
-  GAP_EARLY_MS: 6500, // 초반 평균 투척 간격
-  GAP_LATE_MS: 3200, // 후반(램프 최대) 평균 투척 간격
-  RAMP_SEC: 60, // 이 시간에 걸쳐 EARLY→LATE 로 간격이 좁아짐
+  GAP_EARLY_MS: 8000, // E6-2: 6500→8000 — 초반 평균 투척 간격
+  GAP_LATE_MS: 4500, // E6-2: 3200→4500 — 후반(램프 최대) 평균 투척 간격
+  RAMP_SEC: 90, // E6-2: 60→90 — 이 시간에 걸쳐 EARLY→LATE 로 간격이 좁아짐
   GAP_JITTER: 0.22, // 평균 간격 대비 ±비율 무작위
   RETRY_MS: 300, // 착지 지점이 장애물·구멍과 겹칠 때 미루고 재시도하는 간격
   DROP_LEAD_MIN_S: 1.5, // 마커 표시 → 낙하 최소 선행 시간
@@ -94,8 +94,9 @@ export const OBSTACLE_RENDER = {
 export const LOWBAR_GAP = 52;
 
 // WP3 슬라이드. 홀드 동안 히트박스를 낮춰 상단 투척·낮은 통과형(lowbar) 회피.
+// E6-QA2: 홀드 중 무기한 유지(900ms 자동 기립 폐지 — 지상 장애물은 슬라이드로 회피 불가라 무한 슬라이드가 우위 전략이 아님).
 export const SLIDE = {
-  DURATION_MS: 900, // 최대 지속(이후 자동 기립)
+  MIN_MS: 450, // 최소 유지 — 아래 스와이프(짧은 터치)로도 lowbar 통과 가능한 하한
   HITBOX_SCALE: 0.5, // 슬라이드 중 히트박스 높이 배율
 } as const;
 
@@ -106,7 +107,7 @@ export const CHASE = {
   // gap이 줄수록 실제로 다가오는 게 보임(클램프는 극단에서만).
   START_GAP: 200, // 시작 추격 거리
   MAX_GAP: 280, // 회복 상한
-  RECOVER_PER_SEC: 18, // 안 맞고 달릴 때 초당 회복
+  RECOVER_PER_SEC: 22, // E6-2: 18→22 — 안 맞고 달릴 때 초당 회복
   // 붙잡힘은 실패 판정 우선순위(gap 우선, GameEngine 실패 체크)로 성립한다 —
   // 마지막 피격에서 hp·gap이 동시 소진되는 케이스가 대부분이라 gap을 먼저 봐야
   // "박소장에게 붙잡혔습니다"가 실제로 뜬다. (135로 올리면 hp 사망이 소멸해 과함)
@@ -135,6 +136,11 @@ export const SEASON = {
   EVENT_START: "2026-07-13",
   ROUNDS: 4,
   TOP_N: 50, // 랭킹 조회 상위 노출 수
+  // E6-4: 어뷰징 상한 — 초당 이론 최대 획득 점수.
+  // 거리 SPEED.MAX(560)/DISTANCE_DIVISOR(10) = 56/s + 코인 최악(줄 3개·최소 간격 0.5s, 자석) 6개/s×10 = 60/s
+  // → 이론 116/s, 마진 포함 130/s. SPEED·SPAWN.COIN·COIN_VALUE 밸런스 변경 시 재계산할 것.
+  MAX_SCORE_PER_SEC: 130,
+  SCORE_CAP_BUFFER: 200, // 시작 직후 커피 대체 코인 등 고정 오차 허용
 } as const;
 
 // E4-5 보상 정책 세이프 모드(법적 검토 반영): true면 성적 연동 포인트 표시·포인트 교환을 숨긴다.

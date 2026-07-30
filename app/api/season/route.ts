@@ -8,11 +8,12 @@ import { SEASON } from "@/app/game/engine/config";
 // 랭킹 구조(기획 3장): 하루 점수 = 일일 베스트, 주간 점수 = 라운드(월~일, KST) 내 일일 베스트 합,
 // 이벤트 시작일(SEASON.EVENT_START, KST 월요일) 기준 매주 월요일 리셋, 총 4라운드.
 //
-// POST { userId, nickname, score, mode, date? }
+// POST { userId, nickname, score, mode, playDuration, date? }
 //   - mode가 "endless"일 때만 반영(edu·route 점수는 랭킹 제외)
+//   - E6-4: playDuration(초) 필수 — score ≤ playDuration × MAX_SCORE_PER_SEC + BUFFER 검증(어뷰징 상한)
 //   - date(YYYY-MM-DD, KST) 생략 시 서버가 오늘(KST)로 기록
 //   → 200 { ok: true, todayBest }          해당 날짜 베스트 갱신(기존보다 낮으면 유지)
-//   → 200 { ok: false, reason: "mode" | "invalid" }
+//   → 200 { ok: false, reason: "mode" | "invalid" | "score_cap" }
 // GET ?userId=...
 //   → 200 {
 //        round,                    현재 라운드(1..ROUNDS, 시작 전엔 1)
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
     nickname?: string;
     score?: number;
     mode?: string;
+    playDuration?: number;
     date?: string;
   } | null;
   const userId = body?.userId?.trim();
@@ -70,6 +72,15 @@ export async function POST(req: NextRequest) {
   if (body?.mode !== "endless") {
     // edu 등 비랭킹 모드 점수는 랭킹 제외(기획 3장)
     return NextResponse.json({ ok: false, reason: "mode" });
+  }
+  // E6-4: playDuration 대비 점수 상한 — 조작된 고점수 차단(운영 서버 이관 시에도 동일 검증 유지)
+  const dur = Number(body?.playDuration);
+  if (!Number.isFinite(dur) || dur <= 0 || dur > 7200) {
+    return NextResponse.json({ ok: false, reason: "invalid" });
+  }
+  if (score > dur * SEASON.MAX_SCORE_PER_SEC + SEASON.SCORE_CAP_BUFFER) {
+    console.warn("[SEASON] score_cap 차단:", { userId, score, dur });
+    return NextResponse.json({ ok: false, reason: "score_cap" });
   }
   const date = /^\d{4}-\d{2}-\d{2}$/.test(body?.date ?? "") ? body!.date! : kstDate();
   const rec = store.get(userId) ?? { nickname: "", days: new Map() };

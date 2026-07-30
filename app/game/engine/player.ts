@@ -13,7 +13,8 @@ export class Player {
   runFrame = 0; // 달리기 애니메이션 프레임 누적
   floorY: number = GROUND_Y; // 현재 지면 y — 노선 지형(오르막/내리막) 반영, 엔진이 매 프레임 갱신
   sliding = false; // 슬라이드(숙이기) 중
-  slideUntil = 0; // 자동 기립 시각(ms)
+  slideHeld = false; // E6-QA2: 입력 홀드 중 — 유지되는 동안 계속 슬라이드(공중이면 착지 시 진입)
+  slideMinUntil = 0; // E6-QA2: 최소 유지 시각 — 짧은 스와이프도 lowbar 통과 보장
   jumpStartAt = 0; // 점프 클립(crouch→jump→apex) 재생 기준 시각
   landedAt = 0; // E3.6-3: 착지 순간(먼지 퍼프 연출)
   // E3.6-3: 부스터 트레일용 — 마지막으로 그린 포즈(엔진이 히스토리로 보관)
@@ -47,12 +48,14 @@ export class Player {
     this.invulnUntil = 0;
     this.runFrame = 0;
     this.sliding = false;
-    this.slideUntil = 0;
+    this.slideHeld = false;
+    this.slideMinUntil = 0;
   }
 
   // 원터치 입력: 지면이면 1단, 공중이면 2단 점프 (최대 2단). 점프는 슬라이드를 취소.
   jump() {
     this.sliding = false;
+    this.slideHeld = false; // 점프가 슬라이드 홀드보다 우선(착지 재진입 방지)
     if (this.onGround) {
       this.vy = -PHYSICS.JUMP_V;
       this.jumps = 1;
@@ -64,25 +67,28 @@ export class Player {
     }
   }
 
-  // 아래 입력: 지면이면 슬라이드, 공중이면 빠른 하강
+  // 아래 입력: 지면이면 슬라이드, 공중이면 급강하 + 착지 시 슬라이드 진입(입력 버퍼 — E6-QA2).
+  // 홀드 동안 계속 유지, 놓으면 최소 유지(MIN_MS) 경과 후 기립.
   slide(now: number) {
+    this.slideHeld = true;
     if (this.onGround) {
+      if (!this.sliding) this.slideMinUntil = now + SLIDE.MIN_MS;
       this.sliding = true;
-      this.slideUntil = now + SLIDE.DURATION_MS;
     } else {
-      this.vy = PHYSICS.MAX_FALL; // 공중 급강하
+      this.vy = PHYSICS.MAX_FALL; // 공중 급강하 — slideHeld가 착지 시 슬라이드로 이어줌
     }
   }
 
   endSlide() {
-    this.sliding = false;
+    this.slideHeld = false;
+    // sliding 자체는 update()가 최소 유지(MIN_MS) 지나면 해제 — 짧은 스와이프 보장
   }
 
   // E3.10-2: 일시정지 시간만큼 절대 시각 필드 이동(재개 시 연속성)
   shiftClock(delta: number) {
     this.invulnUntil += delta;
     this.jumpStartAt += delta;
-    this.slideUntil += delta;
+    this.slideMinUntil += delta;
     if (this.landedAt) this.landedAt += delta;
   }
 
@@ -113,13 +119,19 @@ export class Player {
 
     const floor = this.floorY - PLAYER.H;
     if (this.y >= floor) {
-      if (this.jumps > 0 || this.vy > 300) this.landedAt = now; // 착지 퍼프 트리거
+      const wasAirborne = this.jumps > 0 || this.vy > 300;
+      if (wasAirborne) this.landedAt = now; // 착지 퍼프 트리거
       this.y = floor;
       this.vy = 0;
       this.jumps = 0;
+      // E6-QA2: 공중에서 슬라이드를 누르고 있었으면 착지 즉시 슬라이드 진입(입력 버퍼)
+      if (wasAirborne && this.slideHeld && !this.sliding) {
+        this.sliding = true;
+        this.slideMinUntil = now + SLIDE.MIN_MS;
+      }
     }
-    // 슬라이드: 최대 지속 후 자동 기립. 공중이면 슬라이드 해제.
-    if (this.sliding && (now > this.slideUntil || !this.onGround)) {
+    // 슬라이드 유지: 홀드 중엔 계속, 놓으면 최소 유지 경과 후 기립. 공중이면 해제(착지 시 재진입).
+    if (this.sliding && ((!this.slideHeld && now > this.slideMinUntil) || !this.onGround)) {
       this.sliding = false;
     }
     if (this.onGround) {

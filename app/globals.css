@@ -25,6 +25,8 @@ body {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
+  /* E6-1: iOS 롱프레스 콜아웃(복사/공유 시트) 차단 — 슬라이드 홀드가 콜아웃으로 끊기는 것 방지 */
+  -webkit-touch-callout: none;
 }
 
 #__next,

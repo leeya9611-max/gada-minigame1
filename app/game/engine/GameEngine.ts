@@ -912,10 +912,13 @@ export class GameEngine {
     }
   }
 
+  private dialogueMs = DIALOGUE_MS; // E6-QA: 말풍선 페이드 계산용(표시 지속시간)
+
   private say(text: string, now: number, ms: number = DIALOGUE_MS) {
     this.dialogue = text;
     this.lastDialogue = text;
     this.dialogueUntil = now + ms;
+    this.dialogueMs = ms;
   }
 
   // 풀에서 직전 대사를 제외하고 랜덤 선택(연속 중복 금지)
@@ -1094,6 +1097,9 @@ export class GameEngine {
     }
 
     for (const p of this.projectiles) p.draw(ctx, now);
+
+    // E6-QA: 대사 말풍선 — 상단 안내 배너(DOM)와 겹치던 중앙 고정 표시를 화자 머리 위로 이동
+    this.drawDialogue(ctx, now);
 
     this.drawDangerVignette(ctx, now); // E3.5: 위기 비네트(가장자리)
 
@@ -1449,6 +1455,73 @@ export class GameEngine {
 
   // 박소장: 플레이어 뒤 gap 거리. 좌측 가장자리 안쪽으로 클램프해 항상 보이게.
   // 김반장과 동일한 목표 화면 키(TARGET_CHAR_H)로 그린다. gap 작을수록 위기 연출.
+  // E6-QA: 화자(박소장/김반장) 머리 위 말풍선 — "이름:" 프리픽스로 화자 판별, 프리픽스는 떼고 표시.
+  // 잡힘 연출 중엔 숨김(합성 컷·펀치인과 충돌 방지).
+  private drawDialogue(ctx: CanvasRenderingContext2D, now: number) {
+    if (!this.dialogue || this.caughtAt) return;
+    const m = this.dialogue.match(/^(박소장|김반장):\s*/);
+    const speaker = m?.[1] ?? "김반장";
+    const text = m ? this.dialogue.slice(m[0].length) : this.dialogue;
+
+    // 앵커: 화자 머리 위 (박소장은 지형·grab 오프셋 반영된 발 기준, 김반장은 점프 높이 반영)
+    let ax: number;
+    let bottom: number;
+    if (speaker === "박소장") {
+      ax = this.bossFootX;
+      const rawGy = this.groundYAt(ax);
+      const gy = rawGy > VIEW.H ? GROUND_Y : rawGy;
+      bottom = gy - TARGET_CHAR_H - 10;
+    } else {
+      ax = PLAYER.X + PLAYER.W / 2;
+      // 시각 키(126px)가 히트박스(96px)보다 커서 머리 위 여유 30px 추가
+      bottom = this.player.y - (TARGET_CHAR_H - PLAYER.H) - 10;
+    }
+
+    // 페이드 인(120ms 팝) / 아웃(마지막 200ms)
+    const remain = this.dialogueUntil - now;
+    const born = this.dialogueUntil - (this.dialogueMs || DIALOGUE_MS);
+    const fadeIn = Math.min(1, (now - born) / 120);
+    const alpha = Math.min(fadeIn, Math.max(0, Math.min(1, remain / 200)));
+    if (alpha <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // E6-QA2: 확대 — 13px/27h가 눌려 보인다는 피드백 반영
+    ctx.font = "bold 16px sans-serif";
+    const tw = ctx.measureText(text).width;
+    const w = tw + 32;
+    const h = 36;
+    const r = 17;
+    // 말풍선이 화면 밖으로 안 나가게 클램프(꼬리는 화자 위치 유지)
+    const cx = Math.max(6 + w / 2, Math.min(VIEW.W - 6 - w / 2, ax));
+    const x = cx - w / 2;
+    const y = Math.max(6, bottom - h);
+
+    ctx.fillStyle = "rgba(31,42,68,0.92)";
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fill();
+    // 꼬리(화자 방향)
+    const tx = Math.max(x + 18, Math.min(x + w - 18, ax));
+    ctx.beginPath();
+    ctx.moveTo(tx - 9, y + h - 1);
+    ctx.lineTo(tx + 9, y + h - 1);
+    ctx.lineTo(tx, y + h + 10);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, cx, y + h / 2 + 1);
+    ctx.restore();
+  }
+
   private drawBoss(ctx: CanvasRenderingContext2D, now: number) {
     const ratio = Math.max(0, Math.min(1, this.gap / CHASE.MAX_GAP));
     const danger = 1 - ratio; // 0(안전)~1(위기)

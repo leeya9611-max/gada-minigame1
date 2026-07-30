@@ -11,6 +11,7 @@ import { parseToken } from "@/lib/auth";
 import { daysLeft, fetchSeason, postSeasonScore, requestNativeAction, sendResultToNative } from "@/lib/api";
 import type { NativeAction, SeasonBoard } from "@/lib/api";
 import { loadTickets, newSessionId, saveTickets } from "@/lib/tickets";
+import { logEvent } from "@/lib/analytics";
 import {
   addMeters,
   computeStars,
@@ -127,6 +128,7 @@ export default function Game({ token }: { token?: string }) {
     setTickets(left);
     saveTickets(left);
     sessionRef.current = newSessionId();
+    logEvent("ticket_spend", { left }); // E6-3
     return true;
   }, [tickets]);
 
@@ -187,9 +189,23 @@ export default function Game({ token }: { token?: string }) {
         engineRef.current?.pause();
         setPaused(true);
       }
+      // E6-1: 백그라운드 전환 중 pointerup이 유실돼도 슬라이드 홀드가 남지 않게 강제 해제
+      if (document.hidden) {
+        pointers.current.clear();
+        engineRef.current?.endSlide();
+      }
     };
     document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    // E6-1: 네이티브 오버레이 등으로 포커스만 잃는 경우(visibilitychange 미발화)도 동일 방어
+    const onBlur = () => {
+      pointers.current.clear();
+      engineRef.current?.endSlide();
+    };
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("blur", onBlur);
+    };
   }, []);
   // 방금 이수 완료(첫 이수 연출용)
   const [justUnlocked, setJustUnlocked] = useState(false);
@@ -207,6 +223,7 @@ export default function Game({ token }: { token?: string }) {
 
   const handleGameOver = useCallback((r: GameResult) => {
     setResult(r);
+    logEvent("play_end", { mode: r.mode, outcome: r.outcome, playDuration: r.playDuration, score: r.rankScore }); // E6-3
     const nativeResult = {
       ...r,
       sessionId: sessionRef.current,
@@ -220,6 +237,7 @@ export default function Game({ token }: { token?: string }) {
       if (r.mode === "edu") {
         // E2: 안전교육 이수 → 본선 즉시 해금. TODO(서버 이관): userId 기준 서버 저장.
         setJustUnlocked(!eduDoneRef.current);
+        if (!eduDoneRef.current) logEvent("edu_complete"); // E6-3: 최초 이수만
         saveEduDone();
         setEduDone(true);
       } else {
@@ -289,6 +307,7 @@ export default function Game({ token }: { token?: string }) {
     playSfx("button_click");
     // E5: 주차(라운드)별 배경 팔레트 — 시즌 미로드 시 원본(2주차 석양)
     eng.setEndless("map1", season?.round);
+    logEvent("play_start", { mode: "endless" }); // E6-3
     currentModeRef.current = "endless";
     setResult(null);
     setFlash(true);
@@ -311,6 +330,7 @@ export default function Game({ token }: { token?: string }) {
       }
       sessionRef.current = newSessionId(); // 티켓 없이 세션만 발급
       eng.setLevel(level, "map1", "edu");
+      logEvent("play_start", { mode: "edu" }); // E6-3
       currentModeRef.current = "edu";
       setResult(null);
       setFlash(true);
@@ -326,6 +346,7 @@ export default function Game({ token }: { token?: string }) {
     // 안전교육은 무료 재연습, 본선·노선은 티켓 1장
     if (currentModeRef.current !== "edu" && !consumeTicket()) return;
     playSfx("button_click");
+    logEvent("play_start", { mode: currentModeRef.current, restart: true }); // E6-3
     setResult(null);
     engineRef.current?.restart();
   }, [consumeTicket]);
@@ -353,6 +374,17 @@ export default function Game({ token }: { token?: string }) {
   // 아래 스와이프 슬라이드는 보조 입력으로 유지.
   // 손가락별(pointerId) 추적 — 왼손 슬라이드 홀드 중 오른손 점프 탭 가능.
   const pointers = useRef(new Map<number, { startY: number; slide: boolean }>());
+
+  // E6-1: iOS 구형 웹킷은 touch-action:none을 부분적으로만 존중 — 게임 영역 터치 스크롤/러버밴드를
+  // non-passive touchmove preventDefault로 한 번 더 차단(React 루트 리스너는 passive라 ref로 직접 부착)
+  const gameAreaRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = gameAreaRef.current;
+    if (!el) return;
+    const block = (e: TouchEvent) => e.preventDefault();
+    el.addEventListener("touchmove", block, { passive: false });
+    return () => el.removeEventListener("touchmove", block);
+  }, []);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -447,11 +479,14 @@ export default function Game({ token }: { token?: string }) {
       }}
     >
       <div
+        ref={gameAreaRef}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onPointerLeave={onPointerUp}
+        // E6-1: 롱프레스 컨텍스트 메뉴(Android)·selection 진입 차단
+        onContextMenu={(e) => e.preventDefault()}
         style={{
           position: "relative",
           aspectRatio: `${VIEW.W} / ${VIEW.H}`,
@@ -472,7 +507,7 @@ export default function Game({ token }: { token?: string }) {
             {/* E3.5-8: 추격 게이지 제거 — 위험 신호는 박소장 실거리 + 가장자리 비네트가 담당 */}
             <ProgressBar hud={hud} />
             {hud.banner && <SectionBanner text={hud.banner} />}
-            {hud.dialogue && <DialogueBubble text={hud.dialogue} />}
+            {/* E6-QA: 대사 말풍선은 엔진이 화자 머리 위에 캔버스로 직접 그림(상단 배너와 겹침 해소) */}
             <ControlHints />
             {/* E3.10-2: 일시정지 — 우상단 모서리 고정, 점프 입력과 분리(stopPropagation) */}
             {!paused && <PauseButton onClick={pauseGame} />}
@@ -1843,30 +1878,7 @@ function SectionBanner({ text }: { text: string }) {
   );
 }
 
-function DialogueBubble({ text }: { text: string }) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: "20%",
-        left: "50%",
-        transform: "translateX(-50%)",
-        background: "rgba(31,42,68,0.92)",
-        color: "#fff",
-        padding: "10px 16px",
-        borderRadius: 14,
-        fontSize: 15,
-        fontWeight: 600,
-        maxWidth: "80%",
-        textAlign: "center",
-        pointerEvents: "none",
-        boxShadow: "0 6px 20px rgba(0,0,0,.3)",
-      }}
-    >
-      {text}
-    </div>
-  );
-}
+// (E6-QA: DialogueBubble DOM 컴포넌트 제거 — 엔진 drawDialogue가 화자 머리 위 캔버스 렌더로 대체)
 
 // ── S3a 완주 성공 — 안전교육 전용 (E2): 이수 → 무한 잔업 모드 개방 ──
 function ClearOverlay({

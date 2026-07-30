@@ -117,6 +117,7 @@ export async function postSeasonScore(result: NativeGameResult): Promise<void> {
         nickname: result.nickname,
         score: result.rankScore,
         mode: result.mode,
+        playDuration: result.playDuration, // E6-4: 서버 점수 상한 검증용
       }),
       keepalive: true,
     });

@@ -10,6 +10,7 @@ import { REWARD_SAFE_MODE } from "@/app/game/engine/config";
 import { parseToken } from "@/lib/auth";
 import { fetchNickname, loadNickname } from "@/lib/nickname";
 import { loadTickets, saveTickets } from "@/lib/tickets";
+import { logEvent } from "@/lib/analytics";
 
 // E4: 주간 시즌 랭킹 보드 — 게임과 동일한 가로(landscape) 화면.
 // 데이터는 /api/season 스텁(운영 서버 교체 예정). 전국/연령/지역 탭 제거 → 주간 단일 보드.
@@ -40,6 +41,7 @@ function RankingBoard() {
   const [portrait, setPortrait] = useState(false);
 
   useEffect(() => setTickets(loadTickets()), []); // 게임과 동일 저장소 공유
+  useEffect(() => logEvent("ranking_view"), []); // E6-3
 
   // E4-7: 닉네임 — 로컬 캐시 즉시 표시 → 서버 조회로 갱신(Game.tsx 패턴)
   const [nickname, setNickname] = useState<string | null>(null);
