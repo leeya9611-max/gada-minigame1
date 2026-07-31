@@ -13,6 +13,16 @@ pnpm dev
 
 - `Space` / `↑` 또는 화면 터치로 점프 (공중에서 한 번 더 = 2단 점프)
 
+## 배포 (Vercel + Supabase)
+
+1. **환경변수 2개** — Vercel 프로젝트 설정 → Environment Variables에 등록 (로컬은 `.env.local`, 키 이름은 `.env.example` 참고):
+   - `SUPABASE_URL` — 프로젝트 **기본 URL**(`https://xxxx.supabase.co`, `/rest/v1` 붙이지 말 것)
+   - `SUPABASE_SERVICE_ROLE_KEY` — 서버 전용. **`NEXT_PUBLIC_` 접두사 절대 금지**
+   - 미설정 시 API는 메모리 스텁으로 폴백(개발용) — 운영에선 반드시 설정
+2. **빌드** — `npm run build` (prebuild로 점프 클리어런스 게이트 자동 실행). dev 서버 켠 채 빌드 금지.
+3. DB 스키마·RPC는 작업지시서 E7-0의 SQL을 Supabase SQL Editor에서 1회 실행.
+4. supabase-js가 Node 20 지원 중단 예고 — Vercel 프로젝트 설정에서 Node.js 22.x 권장.
+
 ## 기술 선택
 
 - **Next.js 14 (App Router)** + **Canvas 2D** 직접 구현.

@@ -1,4 +1,5 @@
 import { GROUND_Y, PHYSICS, PLAYER, SLIDE } from "./config";
+import { playSfx } from "../../../lib/sfx"; // E7: 효과음
 import { clipFrame, drawChar } from "./sprites";
 import type { Box } from "./types";
 
@@ -60,16 +61,19 @@ export class Player {
       this.vy = -PHYSICS.JUMP_V;
       this.jumps = 1;
       this.jumpStartAt = performance.now();
+      playSfx("jump"); // E7
     } else if (this.jumps < 2) {
       this.vy = -PHYSICS.DOUBLE_JUMP_V;
       this.jumps = 2;
       this.jumpStartAt = performance.now(); // 2단 점프도 클립 재시작
+      playSfx("double_jump"); // E7
     }
   }
 
   // 아래 입력: 지면이면 슬라이드, 공중이면 급강하 + 착지 시 슬라이드 진입(입력 버퍼 — E6-QA2).
   // 홀드 동안 계속 유지, 놓으면 최소 유지(MIN_MS) 경과 후 기립.
   slide(now: number) {
+    if (!this.slideHeld) playSfx("slide"); // E7: 홀드 진입 1회만(반복 호출 방지)
     this.slideHeld = true;
     if (this.onGround) {
       if (!this.sliding) this.slideMinUntil = now + SLIDE.MIN_MS;

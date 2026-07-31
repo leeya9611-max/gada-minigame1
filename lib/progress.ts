@@ -18,9 +18,9 @@ export function addMeters(m: number): number {
   return total;
 }
 
-// ── 안전교육 이수 (E2) ──
-// TODO(서버 이관): 운영에서는 userId 기준 서버 저장으로 교체(가다 계정 권위).
-// 현재는 localStorage — 기기 변경 시 재이수 필요.
+// ── 안전교육 이수 (E2 → E7-1 서버 이관) ──
+// localStorage는 즉시 응답용 캐시, 서버(users.edu_done, userId 권위)가 원본.
+// 서버 실패 시 캐시 값 유지 — 게이트가 막혀 플레이 못 하는 상황을 만들지 않는다.
 const KEY_EDU = "yarikkiri.eduDone";
 
 export function loadEduDone(): boolean {
@@ -31,6 +31,32 @@ export function loadEduDone(): boolean {
 export function saveEduDone(): void {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(KEY_EDU, "1");
+  }
+}
+
+// 서버 조회 — 실패 시 null(호출부는 캐시 유지)
+export async function fetchEduDone(userId: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(`/api/progress?userId=${encodeURIComponent(userId)}`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { eduDone?: boolean };
+    return data.eduDone === true;
+  } catch {
+    return null;
+  }
+}
+
+// 서버 기록 — 실패해도 게임 흐름에 영향 없음(다음 동기화에서 재시도됨)
+export async function postEduDone(userId: string): Promise<void> {
+  try {
+    await fetch("/api/progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+      keepalive: true,
+    });
+  } catch {
+    /* 무시 */
   }
 }
 

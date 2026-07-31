@@ -15,7 +15,9 @@ import { logEvent } from "@/lib/analytics";
 import {
   addMeters,
   computeStars,
+  fetchEduDone,
   loadEduDone,
+  postEduDone,
   loadRouteProgress,
   loadTotalMeters,
   saveEduDone,
@@ -23,6 +25,7 @@ import {
   type RouteProgress,
 } from "@/lib/progress";
 import { playSfx } from "@/lib/sfx";
+import { pauseBgm, startBgm } from "@/lib/bgm";
 import {
   fetchNickname,
   generateNickname,
@@ -148,21 +151,42 @@ export default function Game({ token }: { token?: string }) {
   // E2: 안전교육 이수 게이트 + 현재 플레이 모드(재도전 티켓 분기용)
   const [eduDone, setEduDone] = useState(false);
   useEffect(() => setEduDone(loadEduDone()), []);
+  // E7-1: 서버(users.edu_done) 동기화 — 캐시 우선 표시 후 서버 값으로 갱신.
+  // 서버=true → 캐시 저장(기기 변경 복원) / 서버=false·캐시=true → 이관 전 로컬 기록을 서버로 푸시.
+  // 조회 실패(null)면 캐시 유지 — 게이트가 막히는 상황 방지.
+  useEffect(() => {
+    let alive = true;
+    void fetchEduDone(user.userId).then((server) => {
+      if (!alive || server === null) return;
+      if (server) {
+        saveEduDone();
+        setEduDone(true);
+      } else if (loadEduDone()) {
+        void postEduDone(user.userId);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [user.userId]);
   const currentModeRef = useRef<GameMode>("route");
 
   // E3.10-2: 일시정지 — 버튼/백그라운드 전환 시. 포기는 모드별 분기.
   const [paused, setPaused] = useState(false);
   const pauseGame = useCallback(() => {
     engineRef.current?.pause();
+    pauseBgm(); // E7-BGM
     setPaused(true);
   }, []);
   const resumeGame = useCallback(() => {
     engineRef.current?.resume();
+    startBgm(); // E7-BGM
     setPaused(false);
   }, []);
   const giveUpGame = useCallback(() => {
     const eng = engineRef.current;
     if (!eng) return;
+    startBgm(); // E7-BGM: 일시정지에서 나가도 로비·결과 BGM 유지
     setPaused(false);
     if (currentModeRef.current === "endless") {
       // 엔들리스: 현재 기록으로 정상 종료 → 결과 전달(handleGameOver 경유)
@@ -239,6 +263,7 @@ export default function Game({ token }: { token?: string }) {
         setJustUnlocked(!eduDoneRef.current);
         if (!eduDoneRef.current) logEvent("edu_complete"); // E6-3: 최초 이수만
         saveEduDone();
+        void postEduDone(r.userId); // E7-1: 서버 기록(실패해도 캐시로 플레이 가능)
         setEduDone(true);
       } else {
         // 별점 계산·저장 (WP6.5 — UI 미노출, 데이터는 보관)
@@ -527,7 +552,7 @@ export default function Game({ token }: { token?: string }) {
             loading={!spritesLoaded}
             onStart={() => {
               playSfx("button_click");
-              // 최초 1회만 닉네임 등록, 이후엔 로비 직행 (기획 2.5)
+              startBgm(); // E7-BGM: 첫 사용자 제스처에서 루프 시작(로비~게임 내내 유지)
               setScreen(nickname ? "lobby" : "nickname");
             }}
           />

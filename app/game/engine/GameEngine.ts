@@ -29,6 +29,7 @@ import {
   type LevelData,
 } from "./level";
 import { Player } from "./player";
+import { playSfx } from "../../../lib/sfx"; // E7: 효과음(상대 경로 — .simtest 컴파일 호환)
 import { ScoreKeeper } from "./score";
 import type {
   GameMode,
@@ -530,6 +531,7 @@ export class GameEngine {
     // hp를 먼저 보면 잡힘 연출이 영영 묻힌다(실측: 유저 플레이 대부분이 이 케이스).
     if (this.gap <= 0) {
       this.caughtAt = now;
+      playSfx("caught"); // E7
       this.say("박소장: 잡았다!!", now, 999999);
     } else if (this.player.hp <= 0) {
       this.gameOver(now, "hp");
@@ -785,6 +787,7 @@ export class GameEngine {
     this.projectiles.push(
       new Projectile(kind, now, targetX, this.dropGroundY(targetX), handX, handY, leadMs)
     );
+    playSfx("throw_warn"); // E7: 낙하 마커 표시와 동시 경고음
   }
 
   // 착지 지점(화면 x)이 낙하에 부적합한지 — 장애물 인접·구멍 위·정류장 직전.
@@ -840,6 +843,7 @@ export class GameEngine {
         this.noteEduHit(now);
       }
       this.hits++;
+      playSfx("hit"); // E7
       this.slowUntil = now + SPEED.SLOW_MS;
       this.gap -= CHASE.HIT_LOSS; // 피격 시 박소장이 확 접근
       this.shakeUntil = now + 200; // E3.6-3: 화면 셰이크 4px·0.2s
@@ -883,6 +887,7 @@ export class GameEngine {
       if (c.dead || c.collected) continue;
       if (intersects(pbox, c.box)) {
         this.score.addCoin();
+        playSfx("coin"); // E7
         c.pop(now);
         this.floaters.push({ x: c.x, y: c.y - 18, born: now, text: `+${SCORE.COIN_VALUE}` });
       }
@@ -893,13 +898,16 @@ export class GameEngine {
       if (it.dead) continue;
       if (intersects(pbox, it.box)) {
         if (it.kind === "booster") {
+          playSfx("booster"); // E7
           this.boosterUntil = now + ITEM_EFFECT.BOOSTER_MS;
           this.say(`⚡ ${ITEM_LABEL.booster}`, now, 1400); // E3.11-1: 획득 플로팅(안내 문구 공용)
         } else if (it.kind === "magnet") {
+          playSfx("item_get"); // E7
           this.magnetUntil = now + ITEM_EFFECT.MAGNET_MS;
           this.say(`🧲 ${ITEM_LABEL.magnet}`, now, 1400);
         } else {
           // 커피/하트: 감속 없이 HP 회복. 최대면 코인으로 대체(기획 5.6).
+          playSfx("item_get"); // E7
           if (this.player.heal(ITEM_EFFECT.COFFEE_HEAL)) {
             this.say(`🪖 ${ITEM_LABEL[it.kind]}`, now, 1400);
           } else {
@@ -947,6 +955,7 @@ export class GameEngine {
   // 완주(정류장 도착) = 퇴근 성공 (WP6)
   private finish(now: number) {
     this.phase = "cleared";
+    playSfx("clear"); // E7
     this.clearedAt = now; // E3.14: 버스 슬라이드 인 시작점
     this.say("김반장: 퇴근이다아아!! 🚌", now, 999999);
     this.pushHud();
@@ -955,6 +964,7 @@ export class GameEngine {
 
   private gameOver(now: number, outcome: Outcome) {
     this.phase = "gameover";
+    if (outcome !== "caught") playSfx("gameover"); // E7: 잡힘은 caught 사운드가 이미 재생됨
     this.say(DIALOGUE.gameover.join("  "), now, 999999);
     this.pushHud();
     this.cb.onGameOver(this.buildResult(now, outcome));

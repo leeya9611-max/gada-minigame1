@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SEASON } from "@/app/game/engine/config";
+import { getDb } from "@/lib/db";
 
-// 주간 시즌 랭킹 API — 개발 스텁 (E4).
-// 운영에서는 가다 서버/DB(userId 권위)로 교체한다. 이 스텁은 프로세스 메모리라
-// 서버 재시작 시 초기화됨. 계약(요청/응답 형태)만 운영과 동일하게 유지할 것.
+// 주간 시즌 랭킹 API — E7-1: Supabase(daily_scores + season_board/season_me RPC) 저장.
+// 환경변수 미설정 시 기존 메모리 스텁으로 폴백(로컬 개발·헤드리스 검증).
 //
 // 랭킹 구조(기획 3장): 하루 점수 = 일일 베스트, 주간 점수 = 라운드(월~일, KST) 내 일일 베스트 합,
 // 이벤트 시작일(SEASON.EVENT_START, KST 월요일) 기준 매주 월요일 리셋, 총 4라운드.
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     // edu 등 비랭킹 모드 점수는 랭킹 제외(기획 3장)
     return NextResponse.json({ ok: false, reason: "mode" });
   }
-  // E6-4: playDuration 대비 점수 상한 — 조작된 고점수 차단(운영 서버 이관 시에도 동일 검증 유지)
+  // E6-4: playDuration 대비 점수 상한 — 조작된 고점수 차단
   const dur = Number(body?.playDuration);
   if (!Number.isFinite(dur) || dur <= 0 || dur > 7200) {
     return NextResponse.json({ ok: false, reason: "invalid" });
@@ -83,6 +83,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "score_cap" });
   }
   const date = /^\d{4}-\d{2}-\d{2}$/.test(body?.date ?? "") ? body!.date! : kstDate();
+
+  const db = getDb();
+  if (db) {
+    // users 행 보장(닉네임은 건드리지 않음 — 없을 때만 생성)
+    const { error: userErr } = await db
+      .from("users")
+      .upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
+    if (userErr) return NextResponse.json({ ok: false, reason: "invalid" });
+
+    // 그날 베스트만 유지: ① 없으면 생성(경합 무시) ② 기존보다 클 때만 조건부 갱신(원자적)
+    await db
+      .from("daily_scores")
+      .upsert(
+        { user_id: userId, play_date: date, best_score: score },
+        { onConflict: "user_id,play_date", ignoreDuplicates: true }
+      );
+    await db
+      .from("daily_scores")
+      .update({ best_score: score, updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("play_date", date)
+      .lt("best_score", score);
+
+    const { data } = await db
+      .from("daily_scores")
+      .select("best_score")
+      .eq("user_id", userId)
+      .eq("play_date", date)
+      .maybeSingle();
+    return NextResponse.json({ ok: true, todayBest: data?.best_score ?? score });
+  }
+
+  // ── 메모리 스텁 폴백 ──
   const rec = store.get(userId) ?? { nickname: "", days: new Map() };
   if (body?.nickname) rec.nickname = body.nickname;
   rec.days.set(date, Math.max(rec.days.get(date) ?? 0, score)); // 그날 베스트만 갱신
@@ -94,6 +127,37 @@ export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get("userId")?.trim() ?? "";
   const { round, from, to, endsAt } = currentRound();
 
+  const db = getDb();
+  if (db) {
+    const [board, mine] = await Promise.all([
+      db.rpc("season_board", { p_from: from, p_to: to, p_top: SEASON.TOP_N }),
+      userId
+        ? db.rpc("season_me", { p_from: from, p_to: to, p_user: userId, p_today: kstDate() })
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+    if (board.error) {
+      console.warn("[SEASON] season_board RPC 실패:", board.error.message);
+      return NextResponse.json({ round, endsAt, entries: [], me: null });
+    }
+    const entries = (board.data ?? []).map(
+      (r: { rank: number | string; nickname: string; week_score: number | string }) => ({
+        rank: Number(r.rank),
+        nickname: r.nickname,
+        weekScore: Number(r.week_score),
+      })
+    );
+    const meRow = Array.isArray(mine.data) ? mine.data[0] : null;
+    const me = meRow
+      ? {
+          rank: Number(meRow.rank),
+          weekScore: Number(meRow.week_score),
+          todayBest: Number(meRow.today_best),
+        }
+      : null;
+    return NextResponse.json({ round, endsAt, entries, me });
+  }
+
+  // ── 메모리 스텁 폴백 ──
   const scored = [...store.entries()]
     .map(([uid, rec]) => ({
       uid,
