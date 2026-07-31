@@ -8,7 +8,7 @@ import { CHASE, REWARD_SAFE_MODE, ROUTES, SCORE, VIEW } from "./engine/config";
 import { EDU_ROUTE_ID, loadLevel, type LevelData, type RouteId } from "./engine/level";
 import type { GameMode, GameResult, HudState } from "./engine/types";
 import { parseToken } from "@/lib/auth";
-import { daysLeft, fetchSeason, postSeasonScore, requestNativeAction, sendResultToNative } from "@/lib/api";
+import { daysLeft, fetchSeason, loadCachedSeason, postSeasonScore, requestNativeAction, saveCachedSeason, sendResultToNative } from "@/lib/api";
 import type { NativeAction, SeasonBoard } from "@/lib/api";
 import { loadTickets, newSessionId, saveTickets } from "@/lib/tickets";
 import { logEvent } from "@/lib/analytics";
@@ -139,12 +139,17 @@ export default function Game({ token }: { token?: string }) {
 
   const currentRouteRef = useRef<RouteId>("route1");
 
-  // E4: 주간 시즌 요약(로비 1줄 + D-day). 조회 실패 시 null → 조용히 숨김.
-  const [season, setSeason] = useState<SeasonBoard | null>(null);
+  // E4: 주간 시즌 요약(로비 1줄 + D-day).
+  // E3.31: 직전 응답 캐시로 즉시 표시 → 서버 응답으로 갱신(닉네임 패턴). 실패 시 캐시 유지.
+  const [season, setSeason] = useState<SeasonBoard | null>(() => loadCachedSeason());
   useEffect(() => {
     if (screen !== "lobby") return;
     let alive = true;
-    void fetchSeason(user.userId).then((s) => alive && setSeason(s));
+    void fetchSeason(user.userId).then((s) => {
+      if (!alive || !s) return;
+      saveCachedSeason(s);
+      setSeason(s);
+    });
     return () => {
       alive = false;
     };
@@ -1051,8 +1056,8 @@ function LobbyScreen({
         </div>
       </div>
 
-      {/* ── 라운드 게이지(E3.30-1): season 있을 때만 ── */}
-      {season && <RoundGauge round={season.round} days={daysLeft(season.endsAt)} />}
+      {/* ── 라운드 게이지(E3.30-1 → E3.31-1): 항상 자리 유지 — 로드 전엔 빈 상태(레이아웃 점프 방지) ── */}
+      <RoundGauge round={season?.round ?? null} days={season ? daysLeft(season.endsAt) : null} />
 
       {/* ── 메인 2분할(E3.30-2/3): 좌 캐릭터 / 우 모드 카드 세로 스택 ── */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 16 }}>
@@ -1464,9 +1469,10 @@ function ToggleRow({ label, on, onToggle }: { label: string; on: boolean; onTogg
 
 // E3.30-1: 한 달 챌린지 라운드 게이지 — gauge_track 금속 프레임 + 헬멧 배지 마커 4개 + 채움 오버레이.
 // 트랙/마커 이미지 없으면 CSS 바·🪖 이모지 폴백. 화면 가운데 최대 폭 제한.
-function RoundGauge({ round, days }: { round: number; days: number }) {
+// E3.31-1: round/days가 null(시즌 미로드·캐시 없음)이어도 동일 높이로 렌더 — 내용만 비움.
+function RoundGauge({ round, days }: { round: number | null; days: number | null }) {
   const TOTAL = 4; // 한 달 = 4주(라운드)
-  const cur = Math.max(1, Math.min(TOTAL, round));
+  const cur = round === null ? 0 : Math.max(1, Math.min(TOTAL, round));
   const fillPct = (cur / TOTAL) * 100;
   return (
     <div
@@ -1483,12 +1489,17 @@ function RoundGauge({ round, days }: { round: number; days: number }) {
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.05 }}>
         <span
           className={headlineFont.className}
-          style={{ fontSize: 26, color: "#ffd23f", textShadow: "0 2px 4px rgba(0,0,0,0.65)" }}
+          style={{
+            fontSize: 26,
+            color: "#ffd23f",
+            textShadow: "0 2px 4px rgba(0,0,0,0.65)",
+            opacity: days === null ? 0.35 : 1,
+          }}
         >
-          D-{days}
+          {days === null ? "D-?" : `D-${days}`}
         </span>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: "#aebfda", whiteSpace: "nowrap" }}>
-          {cur}/{TOTAL} 라운드
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: "#aebfda", whiteSpace: "nowrap", opacity: round === null ? 0.5 : 1 }}>
+          {round === null ? "-/4 라운드" : `${cur}/${TOTAL} 라운드`}
         </span>
       </div>
       <div style={{ position: "relative", flex: 1, aspectRatio: "1400 / 230", minHeight: 30, maxHeight: 44 }}>

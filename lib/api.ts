@@ -149,6 +149,31 @@ export async function postSeasonScore(result: NativeGameResult): Promise<void> {
   }
 }
 
+// E3.31: 직전 시즌 값 캐시 — 로비 게이지가 서버 응답 전에 즉시 그려지게(닉네임 캐시 패턴).
+// round/endsAt만 저장(성적은 실시간성 우선이라 미캐시).
+const SEASON_CACHE_KEY = "yarikkiri.season.last";
+
+export function loadCachedSeason(): SeasonBoard | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SEASON_CACHE_KEY);
+    if (!raw) return null;
+    const { round, endsAt } = JSON.parse(raw) as { round?: number; endsAt?: string };
+    if (typeof round !== "number" || typeof endsAt !== "string") return null;
+    return { round, endsAt, entries: [], me: null };
+  } catch {
+    return null;
+  }
+}
+
+export function saveCachedSeason(b: SeasonBoard): void {
+  try {
+    window.localStorage.setItem(SEASON_CACHE_KEY, JSON.stringify({ round: b.round, endsAt: b.endsAt }));
+  } catch {
+    /* 무시 */
+  }
+}
+
 // 주간 랭킹 조회 — 실패 시 null(호출부는 조용히 숨김)
 export async function fetchSeason(userId: string): Promise<SeasonBoard | null> {
   try {
