@@ -59,12 +59,19 @@ function RankingBoard() {
   }, [token]);
 
   // 가로 화면 안내(게임과 동일 규칙)
+  // E8-4: matchMedia가 false로 고정되는 웹뷰 대응 — 뷰포트 비율 1차 + matchMedia OR(게임과 동일)
   useEffect(() => {
     const mq = window.matchMedia("(orientation: portrait)");
-    const update = () => setPortrait(mq.matches);
+    const update = () => setPortrait(window.innerHeight > window.innerWidth || mq.matches);
     update();
     mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      mq.removeEventListener("change", update);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
   }, []);
 
   // 티켓 충전 요청. 실제 지급/차감은 네이티브 앱 API 담당(웹은 요청+표시 스텁).

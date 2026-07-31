@@ -486,18 +486,22 @@ export default function Game({ token }: { token?: string }) {
   }, []);
 
   // 세로 감지 → 회전 안내
+  // E8-4: 일부 모바일 웹뷰에서 matchMedia("(orientation: portrait)")가 false로 고정되는 문제 —
+  // 실제 뷰포트 비율(innerHeight > innerWidth)을 1차 기준으로 하고 matchMedia는 OR 보조.
   const [isPortrait, setIsPortrait] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(orientation: portrait)");
-    const update = () => setIsPortrait(mq.matches);
+    const update = () => setIsPortrait(window.innerHeight > window.innerWidth || mq.matches);
     update();
     mq.addEventListener?.("change", update);
     window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
     const so = (window.screen as unknown as Screen2).orientation;
     so?.lock?.("landscape").catch(() => {});
     return () => {
       mq.removeEventListener?.("change", update);
       window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
     };
   }, []);
 
