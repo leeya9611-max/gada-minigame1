@@ -26,6 +26,7 @@ import {
 } from "@/lib/progress";
 import { playSfx, preloadSfx } from "@/lib/sfx";
 import { pauseBgm, startBgm } from "@/lib/bgm";
+import { applySoundSettings, loadSoundSettings, setBgmEnabled, setSfxEnabled } from "@/lib/settings";
 import { BridgeDebug } from "./BridgeDebug";
 import {
   fetchNickname,
@@ -475,7 +476,11 @@ export default function Game({ token }: { token?: string }) {
   useEffect(() => {
     setDebugMode(new URLSearchParams(window.location.search).has("debug"));
     preloadSfx(); // E8-2: 효과음 버퍼 사전 디코드(첫 재생 지연·iOS 렉 방지)
+    applySoundSettings(); // E8-6: 저장된 사운드 설정 적용(BGM off면 시작 안 함)
   }, []);
+
+  // E8-6: 환경설정(사운드) 패널 — 로비 톱니바퀴·일시정지 오버레이 공용
+  const [showSettings, setShowSettings] = useState(false);
 
   // 세로 감지 → 회전 안내
   // E8-4: 일부 모바일 웹뷰에서 matchMedia("(orientation: portrait)")가 false로 고정되는 문제 —
@@ -545,6 +550,7 @@ export default function Game({ token }: { token?: string }) {
                 mode={currentModeRef.current}
                 onResume={resumeGame}
                 onGiveUp={giveUpGame}
+                onOpenSettings={() => setShowSettings(true)}
               />
             )}
           </>
@@ -584,6 +590,7 @@ export default function Game({ token }: { token?: string }) {
             onStartEdu={startEdu}
             onStartEndless={startEndless}
             onChargeTicket={() => charge("watchAdForTicket")}
+            onOpenSettings={() => setShowSettings(true)}
             loading={!spritesLoaded}
           />
         )}
@@ -631,6 +638,7 @@ export default function Game({ token }: { token?: string }) {
         <style>{`@keyframes flashOut{from{opacity:1}to{opacity:0}}`}</style>
       </div>
 
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
       {isPortrait && <RotateHint />}
       {/* E7-3: 브리지 디버그 오버레이 — ?debug=1 웹뷰 QA 전용, 게임 화면 불변 */}
       {debugMode && <BridgeDebug />}
@@ -985,6 +993,7 @@ function LobbyScreen({
   onStartEdu,
   onStartEndless,
   onChargeTicket,
+  onOpenSettings,
   loading,
 }: {
   nickname: string | null;
@@ -995,6 +1004,7 @@ function LobbyScreen({
   onStartEdu: () => void;
   onStartEndless: () => void;
   onChargeTicket: () => void;
+  onOpenSettings: () => void;
   loading: boolean;
 }) {
   return (
@@ -1036,6 +1046,7 @@ function LobbyScreen({
         {/* E3.28: 우상단 — 티켓 재화 바 + 나가기 버튼 */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <TicketBar tickets={tickets} onCharge={onChargeTicket} />
+          <SettingsButton onClick={onOpenSettings} />
           <ExitButton />
         </div>
       </div>
@@ -1310,6 +1321,143 @@ function ExitButton() {
           style={{ height: 34, width: "auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.45))" }}
         />
       )}
+    </button>
+  );
+}
+
+// E8-6: 환경설정 버튼 — icon_settings.png(미반입, ⚙ 폴백), ExitButton과 동일 h34 톤
+function SettingsButton({ onClick }: { onClick: () => void }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      aria-label="환경설정"
+      style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}
+    >
+      {broken ? (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 34,
+            height: 34,
+            borderRadius: "50%",
+            background: "rgba(0,0,0,0.4)",
+            border: "1px solid rgba(255,255,255,0.25)",
+            fontSize: 19,
+            lineHeight: 1,
+          }}
+        >
+          ⚙
+        </span>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/assets/ui/icon_settings.png"
+          alt=""
+          aria-hidden
+          draggable={false}
+          onError={() => setBroken(true)}
+          style={{ height: 34, width: "auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.45))" }}
+        />
+      )}
+    </button>
+  );
+}
+
+// E8-6: 사운드 설정 패널 — 로비·일시정지 공용 모달(기존 오버레이 패턴 재사용, 새 화면 아님)
+function SettingsPanel({ onClose }: { onClose: () => void }) {
+  const [snd, setSnd] = useState(loadSoundSettings);
+  return (
+    <div
+      style={{ ...overlayStyle, background: "rgba(14,21,38,0.85)", zIndex: 60 }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div className={headlineFont.className} style={{ fontSize: 24, marginBottom: 14 }}>
+        ⚙ 환경설정
+      </div>
+      <div style={{ ...resultCard, maxWidth: 340, width: "100%", padding: "14px 20px", textAlign: "left" }}>
+        <ToggleRow
+          label="배경음악"
+          on={snd.bgm}
+          onToggle={() => {
+            const v = !snd.bgm;
+            setBgmEnabled(v); // 저장 + 즉시 반영 — 토글 자체 효과음 없음(E8-6-6)
+            setSnd((p) => ({ ...p, bgm: v }));
+          }}
+        />
+        <div style={{ height: 1, background: "rgba(255,255,255,0.12)", margin: "10px 0" }} />
+        <ToggleRow
+          label="효과음"
+          on={snd.sfx}
+          onToggle={() => {
+            const v = !snd.sfx;
+            setSfxEnabled(v);
+            setSnd((p) => ({ ...p, sfx: v }));
+          }}
+        />
+      </div>
+      <button onClick={onClose} style={{ ...secondaryBtn, marginTop: 16, width: 160 }}>
+        닫기
+      </button>
+    </div>
+  );
+}
+
+// 스위치형 토글(CSS만) + 상태 텍스트 — 색만으로 판단하지 않게 "켜짐/꺼짐" 병기
+function ToggleRow({ label, on, onToggle }: { label: string; on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      role="switch"
+      aria-checked={on}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        width: "100%",
+        background: "transparent",
+        border: "none",
+        color: "#fff",
+        cursor: "pointer",
+        padding: "6px 0",
+        fontSize: 15,
+        fontWeight: 700,
+      }}
+    >
+      <span>{label}</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: on ? "#8ee6d0" : "#8fa3c4" }}>
+          {on ? "켜짐" : "꺼짐"}
+        </span>
+        <span
+          style={{
+            position: "relative",
+            width: 46,
+            height: 26,
+            borderRadius: 999,
+            background: on ? "#2E66F6" : "rgba(255,255,255,0.18)",
+            border: "1px solid rgba(255,255,255,0.25)",
+            transition: "background 0.15s",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: on ? 22 : 2,
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: "#fff",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
+              transition: "left 0.15s",
+            }}
+          />
+        </span>
+      </span>
     </button>
   );
 }
@@ -2191,10 +2339,12 @@ function PauseOverlay({
   mode,
   onResume,
   onGiveUp,
+  onOpenSettings,
 }: {
   mode: GameMode;
   onResume: () => void;
   onGiveUp: () => void;
+  onOpenSettings: () => void;
 }) {
   return (
     <div
@@ -2218,6 +2368,10 @@ function PauseOverlay({
           {mode === "endless" ? "포기 (기록 저장)" : "포기"}
         </button>
       </div>
+      {/* E8-6: 플레이 중 소리 끄기 진입 — 공용 설정 패널 재사용 */}
+      <button onClick={onOpenSettings} style={{ ...secondaryBtn, marginTop: 12, maxWidth: 200 }}>
+        ⚙ 소리 설정
+      </button>
     </div>
   );
 }
