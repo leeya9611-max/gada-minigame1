@@ -1384,6 +1384,8 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
       </div>
       <div style={{ ...resultCard, maxWidth: 340, width: "100%", padding: "14px 20px", textAlign: "left" }}>
         <ToggleRow
+          icon="/assets/ui/icon_music.png"
+          iconFallback="🎵"
           label="배경음악"
           on={snd.bgm}
           onToggle={() => {
@@ -1394,6 +1396,8 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
         />
         <div style={{ height: 1, background: "rgba(255,255,255,0.12)", margin: "10px 0" }} />
         <ToggleRow
+          icon="/assets/ui/icon_sfx.png"
+          iconFallback="🔊"
           label="효과음"
           on={snd.sfx}
           onToggle={() => {
@@ -1411,7 +1415,20 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
 }
 
 // 스위치형 토글(CSS만) + 상태 텍스트 — 색만으로 판단하지 않게 "켜짐/꺼짐" 병기
-function ToggleRow({ label, on, onToggle }: { label: string; on: boolean; onToggle: () => void }) {
+// E8-6-1: 행 왼쪽 아이콘(icon_music/icon_sfx) — 파일 없으면 이모지 폴백(BtnIcon)
+function ToggleRow({
+  icon,
+  iconFallback,
+  label,
+  on,
+  onToggle,
+}: {
+  icon: string;
+  iconFallback: string;
+  label: string;
+  on: boolean;
+  onToggle: () => void;
+}) {
   return (
     <button
       onClick={onToggle}
@@ -1431,7 +1448,10 @@ function ToggleRow({ label, on, onToggle }: { label: string; on: boolean; onTogg
         fontWeight: 700,
       }}
     >
-      <span>{label}</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+        <BtnIcon src={icon} fallback={iconFallback} size={30} />
+        {label}
+      </span>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 12, fontWeight: 800, color: on ? "#8ee6d0" : "#8fa3c4" }}>
           {on ? "켜짐" : "꺼짐"}
