@@ -6,6 +6,8 @@
 
 import { useEffect, useState } from "react";
 import { requestNativeAction, sendResultToNative, type BridgeLogEntry } from "@/lib/api";
+import { setSfxMuted } from "@/lib/sfx";
+import { pauseBgm, startBgm } from "@/lib/bgm";
 
 interface ErrLine {
   ts: number;
@@ -32,6 +34,25 @@ export function BridgeDebug() {
   const [logs, setLogs] = useState<BridgeLogEntry[]>([]);
   const [errs, setErrs] = useState<ErrLine[]>([]);
   const [env, setEnv] = useState("-");
+  const [perf, setPerf] = useState("측정 중…");
+  const [sfxOff, setSfxOff] = useState(false);
+  const [bgmOff, setBgmOff] = useState(false);
+
+  // E8-2: 실시간 렌더 계측 — 엔진 __ykPerf 훅 활성화, 1초 창 평균 표시
+  useEffect(() => {
+    const w = window as unknown as { __ykPerf?: boolean; __ykRender?: { ms: number; frames: number } };
+    w.__ykPerf = true;
+    let prev = { ms: 0, frames: 0 };
+    const id = window.setInterval(() => {
+      const a = w.__ykRender;
+      if (!a) return;
+      const df = a.frames - prev.frames;
+      const dms = a.ms - prev.ms;
+      prev = { ms: a.ms, frames: a.frames };
+      if (df > 0) setPerf(`${df} fps · render ${(dms / df).toFixed(2)}ms/f`);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     setEnv(detectBridge());
@@ -96,12 +117,34 @@ export function BridgeDebug() {
         </button>
       </div>
       <div style={{ color: "#8fd0ff" }}>감지: {env}</div>
+      <div style={{ color: "#ffd97a" }}>성능: {perf}</div>
       <div style={{ color: "#8fa3c4", wordBreak: "break-all" }}>UA: {typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 90) : "-"}</div>
 
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "6px 0" }}>
         <button style={btn} onClick={() => requestNativeAction("exitGame")}>exitGame</button>
         <button style={btn} onClick={() => requestNativeAction("watchAdForTicket")}>광고티켓</button>
         <button style={btn} onClick={() => requestNativeAction("shareResult")}>공유</button>
+        <button
+          style={{ ...btn, background: sfxOff ? "#888" : "#2E66F6" }}
+          onClick={() => {
+            const next = !sfxOff;
+            setSfxOff(next);
+            setSfxMuted(next);
+          }}
+        >
+          SFX {sfxOff ? "켜기" : "끄기"}
+        </button>
+        <button
+          style={{ ...btn, background: bgmOff ? "#888" : "#2E66F6" }}
+          onClick={() => {
+            const next = !bgmOff;
+            setBgmOff(next);
+            if (next) pauseBgm();
+            else startBgm();
+          }}
+        >
+          BGM {bgmOff ? "켜기" : "끄기"}
+        </button>
         <button
           style={btn}
           onClick={() =>

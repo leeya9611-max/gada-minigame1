@@ -24,7 +24,7 @@ import {
   saveRouteResult,
   type RouteProgress,
 } from "@/lib/progress";
-import { playSfx } from "@/lib/sfx";
+import { playSfx, preloadSfx } from "@/lib/sfx";
 import { pauseBgm, startBgm } from "@/lib/bgm";
 import { BridgeDebug } from "./BridgeDebug";
 import {
@@ -482,6 +482,7 @@ export default function Game({ token }: { token?: string }) {
   const [debugMode, setDebugMode] = useState(false);
   useEffect(() => {
     setDebugMode(new URLSearchParams(window.location.search).has("debug"));
+    preloadSfx(); // E8-2: 효과음 버퍼 사전 디코드(첫 재생 지연·iOS 렉 방지)
   }, []);
 
   // 세로 감지 → 회전 안내
