@@ -121,6 +121,24 @@ export function BridgeDebug() {
       <div style={{ color: "#8fa3c4", wordBreak: "break-all" }}>UA: {typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 90) : "-"}</div>
 
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "6px 0" }}>
+        {/* E8-6: 게스트 ID·로컬 진행 초기화 → 새 유저로 재시작(내부 테스트용) */}
+        <button
+          style={{ ...btn, background: "#d9534f" }}
+          onClick={() => {
+            try {
+              for (const k of Object.keys(localStorage)) {
+                if (k.startsWith("yarikkiri.") || k === "yk_guest_id" || k === "yk_last_uid") {
+                  localStorage.removeItem(k);
+                }
+              }
+            } catch {
+              /* 무시 */
+            }
+            location.reload();
+          }}
+        >
+          새 계정(로컬 초기화)
+        </button>
         <button style={btn} onClick={() => requestNativeAction("exitGame")}>exitGame</button>
         <button style={btn} onClick={() => requestNativeAction("watchAdForTicket")}>광고티켓</button>
         <button style={btn} onClick={() => requestNativeAction("shareResult")}>공유</button>

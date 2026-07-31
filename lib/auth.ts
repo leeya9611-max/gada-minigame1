@@ -6,7 +6,21 @@ export interface SessionUser {
   isGuest: boolean;
 }
 
-const GUEST: SessionUser = { userId: "guest", isGuest: true };
+// E8-6: 게스트를 기기별 고유 ID로 — 토큰 없이 접속한 테스터들이 전부 "guest" 하나로 묶여
+// 서버 닉네임·이수·점수를 공유하던 문제. localStorage에 1회 발급·고정(SSR은 임시 "guest").
+function guestUser(): SessionUser {
+  if (typeof window === "undefined") return { userId: "guest", isGuest: true };
+  try {
+    let id = window.localStorage.getItem("yk_guest_id");
+    if (!id) {
+      id = "guest-" + Math.random().toString(36).slice(2, 10);
+      window.localStorage.setItem("yk_guest_id", id);
+    }
+    return { userId: id, isGuest: true };
+  } catch {
+    return { userId: "guest", isGuest: true };
+  }
+}
 
 // base64url → 문자열 (브라우저 atob 기반)
 function base64UrlDecode(input: string): string {
@@ -27,12 +41,12 @@ function base64UrlDecode(input: string): string {
 // 토큰 형식(협의 전 잠정): base64url(JSON) 또는 JWT의 payload.
 // { "uid": "u_123", "exp": 1720000000 } 형태를 기대. exp 있으면 만료 검증.
 export function parseToken(token: string | null | undefined): SessionUser {
-  if (!token) return GUEST;
+  if (!token) return guestUser();
 
   // JWT라면 가운데(payload) 조각 사용
   const segment = token.includes(".") ? token.split(".")[1] : token;
   const json = base64UrlDecode(segment);
-  if (!json) return GUEST;
+  if (!json) return guestUser();
 
   try {
     const payload = JSON.parse(json) as Record<string, unknown>;
@@ -40,14 +54,14 @@ export function parseToken(token: string | null | undefined): SessionUser {
       (payload.uid as string) ||
       (payload.userId as string) ||
       (payload.sub as string);
-    if (!uid) return GUEST;
+    if (!uid) return guestUser();
 
     const exp = payload.exp as number | undefined;
     if (typeof exp === "number" && exp * 1000 < Date.now()) {
-      return GUEST; // 만료 토큰 → 게스트 처리
+      return guestUser(); // 만료 토큰 → 게스트 처리
     }
     return { userId: String(uid), isGuest: false };
   } catch {
-    return GUEST;
+    return guestUser();
   }
 }
