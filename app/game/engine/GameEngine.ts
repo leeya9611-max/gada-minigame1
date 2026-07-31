@@ -231,6 +231,9 @@ export class GameEngine {
     this.lengthPx = levelLength(this.level);
     this.bg = new Background(mapKey);
     this.reset();
+    // E8-8: reset()은 phase를 건드리지 않는다 — cleared/gameover 화면에서 바로 진입 시
+    // 이전 phase가 남아 onTap()이 무시되던 버그(이수 직후 "무한 잔업 모드 가기" 멈춤)
+    this.phase = "ready";
     this.pushHud();
   }
 
@@ -244,6 +247,7 @@ export class GameEngine {
     this.lengthPx = 0;
     this.bg = new Background(mapKey, round ? themeForRound(round) : undefined);
     this.reset();
+    this.phase = "ready"; // E8-8: setLevel과 동일 — 직전 화면 phase 잔존 방지
     this.pushHud();
   }
 
