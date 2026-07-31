@@ -2,7 +2,9 @@ import { GROUND_Y, VIEW, type RoundTheme } from "./config";
 
 // 맵 배경: 최대 3단 패럴럭스 (하늘·원경 / 중경 / 바닥 스트립).
 // 2026-07: map1을 AI 생성 에셋(bg_far_sunset/bg_mid_buildings/ground_strip)으로 교체.
-// 로드 전에는 isReady=false → 벡터 폴백.
+// E8-1: 렌더 최적화 — 로드 시 1회 파이프라인(표시 크기 축소 ×DPR → 필터/테마 픽셀 처리 →
+// 미러 페어 베이크)으로 굽고, draw()는 모듈로 1:1 블릿만 한다(매 프레임 리샘플·transform 제거).
+// 베이크 실패 시(getImageData 불가 등) 원본 이미지 per-frame 타일링으로 폴백.
 export interface MapLayers {
   sky: string; // 원경(하늘 포함, 밑단이 지면선에 정렬됨)
   silhouette?: string; // 중경(진짜 알파) — 채도·명도 필터 캐시 적용
@@ -34,6 +36,8 @@ const P_GROUND = 1;
 const SIL_H = 280;
 // 중경 하단을 지면 상단선보다 아래로 내려, 밑단 컨테이너 줄이 지면 스트립 뒤로 살짝 묻히게
 const SIL_SINK = 30;
+// 원경 표시 높이(밑단 = 지면선)
+const SKY_H = Math.max(GROUND_Y, GROUND_Y * 1.02);
 
 // 중경 필터: 채도 -50%·명도 +10% — ctx.filter 대신 픽셀 연산(웹뷰 호환·프레임 비용 0).
 // E3.8-3: 컨테이너 더미 등 중경 하단 오브젝트가 장애물(자재더미)과 구분되도록 채도 강하.
@@ -45,9 +49,52 @@ const MID_PIVOT = 168; // 대비 압축 기준 밝기
 const MID_BLUR_SCALE = 3; // E3.17-1: 다운샘플 배율(≈ 가우시안 2~3px 상당)
 
 type LayerSource = HTMLImageElement | HTMLCanvasElement;
+type LayerKey = "sky" | "silhouette" | "ground";
+
+// E8-1: 표시 크기로 구운 레이어 — draw()는 이 캔버스를 1:1(디바이스 픽셀 기준) 블릿만 한다.
+interface BakedLayer {
+  canvas: HTMLCanvasElement; // 미러 레이어는 [정방향|반전] 페어가 베이크되어 있음
+  destW: number; // draw 목적지 폭(CSS px)
+  destH: number; // draw 목적지 높이(CSS px)
+  period: number; // 타일 반복 주기(CSS px, 1px 오버랩 반영)
+}
+
+// 중경 필터(채도·명도·대비 압축 + 다운→업샘플 블러)를 캔버스에 제자리 적용
+function applyMidFilter(cv: HTMLCanvasElement): void {
+  const c = cv.getContext("2d");
+  if (!c) return;
+  const data = c.getImageData(0, 0, cv.width, cv.height);
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] === 0) continue;
+    const luma = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+    for (let ch = 0; ch < 3; ch++) {
+      const v = (luma + (px[i + ch] - luma) * MID_SATURATE) * MID_BRIGHTEN;
+      // E3.17-2: 대비 압축 — 어두운 창문 등이 전경 아웃라인과 경쟁하지 않게
+      px[i + ch] = Math.max(0, Math.min(255, MID_PIVOT + (v - MID_PIVOT) * MID_CONTRAST));
+    }
+  }
+  c.putImageData(data, 0, 0);
+  // E3.17-1: 약한 블러 — 1/N 다운샘플 후 업샘플(스무딩) ≈ 가우시안 2~3px. 캐시 1회.
+  try {
+    const small = document.createElement("canvas");
+    small.width = Math.max(1, Math.round(cv.width / MID_BLUR_SCALE));
+    small.height = Math.max(1, Math.round(cv.height / MID_BLUR_SCALE));
+    const sc = small.getContext("2d");
+    if (sc) {
+      sc.imageSmoothingEnabled = true;
+      sc.drawImage(cv, 0, 0, small.width, small.height);
+      c.imageSmoothingEnabled = true;
+      c.clearRect(0, 0, cv.width, cv.height);
+      c.drawImage(small, 0, 0, cv.width, cv.height);
+    }
+  } catch {
+    /* 블러 실패 시 색 보정본만 사용 */
+  }
+}
 
 // E5: 팔레트 스왑 — hue-rotate + saturate + brightness를 픽셀 연산으로 1회 구워 캐시.
-// ctx.filter는 웹뷰 호환·프레임 비용 문제로 미사용(기존 filterCache와 동일 원칙).
+// ctx.filter는 웹뷰 호환·프레임 비용 문제로 미사용.
 function themeCache(src: LayerSource, t: RoundTheme): HTMLCanvasElement | null {
   if (t.hue === 0 && t.saturate === 1 && t.brightness === 1) return null; // 원본 테마
   try {
@@ -92,73 +139,25 @@ function themeCache(src: LayerSource, t: RoundTheme): HTMLCanvasElement | null {
   }
 }
 
-// 오프스크린 캔버스에 채도·명도 필터를 1회 적용해 캐시
-function filterCache(img: HTMLImageElement, saturate: number, brighten: number): HTMLCanvasElement | null {
-  try {
-    const cv = document.createElement("canvas");
-    cv.width = img.naturalWidth;
-    cv.height = img.naturalHeight;
-    const c = cv.getContext("2d");
-    if (!c) return null;
-    c.drawImage(img, 0, 0);
-    const data = c.getImageData(0, 0, cv.width, cv.height);
-    const px = data.data;
-    for (let i = 0; i < px.length; i += 4) {
-      if (px[i + 3] === 0) continue;
-      const luma = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
-      for (let ch = 0; ch < 3; ch++) {
-        const v = (luma + (px[i + ch] - luma) * saturate) * brighten;
-        // E3.17-2: 대비 압축 — 어두운 창문 등이 전경 아웃라인과 경쟁하지 않게
-        px[i + ch] = Math.max(0, Math.min(255, MID_PIVOT + (v - MID_PIVOT) * MID_CONTRAST));
-      }
-    }
-    c.putImageData(data, 0, 0);
-    // E3.17-1: 약한 블러 — 1/N 다운샘플 후 업샘플(스무딩) ≈ 가우시안 2~3px. 캐시 1회.
-    try {
-      const small = document.createElement("canvas");
-      small.width = Math.max(1, Math.round(cv.width / MID_BLUR_SCALE));
-      small.height = Math.max(1, Math.round(cv.height / MID_BLUR_SCALE));
-      const sc = small.getContext("2d");
-      if (sc) {
-        sc.imageSmoothingEnabled = true;
-        sc.drawImage(cv, 0, 0, small.width, small.height);
-        c.imageSmoothingEnabled = true;
-        c.clearRect(0, 0, cv.width, cv.height);
-        c.drawImage(small, 0, 0, cv.width, cv.height);
-      }
-    } catch {
-      /* 블러 실패 시 색 보정본만 사용 */
-    }
-    return cv;
-  } catch {
-    return null; // CORS 등 실패 시 원본 사용
-  }
-}
-
 export class Background {
-  private imgs: Partial<Record<"sky" | "silhouette" | "ground", HTMLImageElement>> = {};
-  private midFiltered: HTMLCanvasElement | null = null;
-  // E5: 라운드 테마 캐시 — 레이어별 1회 굽기(null = 원본 그대로)
-  private themed: Partial<Record<"sky" | "ground", HTMLCanvasElement>> = {};
+  private imgs: Partial<Record<LayerKey, HTMLImageElement>> = {};
+  private baked: Partial<Record<LayerKey, BakedLayer>> = {};
   private ready = false;
+  private theme?: RoundTheme;
 
   constructor(key: MapKey = "map1", theme?: RoundTheme) {
     if (typeof window === "undefined") return;
+    this.theme = theme;
     const layers = MAP_LAYERS[key];
-    const entries = Object.entries(layers) as ["sky" | "silhouette" | "ground", string][];
+    const entries = Object.entries(layers) as [LayerKey, string][];
     let loaded = 0;
     for (const [k, src] of entries) {
       const img = new Image();
       img.onload = () => {
-        if (k === "silhouette") {
-          this.midFiltered = filterCache(img, MID_SATURATE, MID_BRIGHTEN);
-          // 중경: 기존 채도·대비·블러 캐시 위에 테마를 이어서 굽기
-          if (theme && this.midFiltered) {
-            this.midFiltered = themeCache(this.midFiltered, theme) ?? this.midFiltered;
-          }
-        } else if (theme) {
-          const tc = themeCache(img, theme);
-          if (tc) this.themed[k] = tc;
+        try {
+          this.baked[k] = this.bake(k, img);
+        } catch {
+          /* 베이크 실패 → draw()가 원본 per-frame 타일링으로 폴백 */
         }
         if (++loaded === entries.length) this.ready = true;
       };
@@ -167,14 +166,60 @@ export class Background {
     }
   }
 
+  // E8-1 파이프라인: 표시 크기(×DPR) 축소 → (중경) 필터 → 테마 → (미러 레이어) 페어 베이크
+  private bake(k: LayerKey, img: HTMLImageElement): BakedLayer {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cssH = k === "sky" ? SKY_H : k === "silhouette" ? SIL_H : VIEW.GROUND_H;
+    const cssW = img.naturalWidth * (cssH / img.naturalHeight);
+    const w = Math.max(1, Math.round(cssW * dpr));
+    const h = Math.max(1, Math.round(cssH * dpr));
+
+    // ① 표시 크기 축소(이후 픽셀 루프가 이 크기에서 돌아 비용도 같이 감소)
+    let cv = document.createElement("canvas");
+    cv.width = w;
+    cv.height = h;
+    const c = cv.getContext("2d");
+    if (!c) throw new Error("no ctx");
+    c.imageSmoothingEnabled = true;
+    c.drawImage(img, 0, 0, w, h);
+
+    // ② 중경 필터(값 불변 — CLAUDE.md: v2 에셋은 이 필터 보상 선적용)
+    if (k === "silhouette") applyMidFilter(cv);
+
+    // ③ 라운드 테마
+    if (this.theme) cv = themeCache(cv, this.theme) ?? cv;
+
+    // ④ 미러 페어 베이크(sky·silhouette) — per-frame scale(-1,1) 제거.
+    //    1px(CSS) 오버랩을 디바이스 픽셀로 환산해 페어 내부·페어 간 이음새 동일 유지.
+    const mirror = k !== "ground";
+    if (mirror) {
+      const ovl = Math.max(1, Math.round(dpr)); // 1 CSS px 오버랩(디바이스 px)
+      const pair = document.createElement("canvas");
+      pair.width = w * 2 - ovl;
+      pair.height = h;
+      const pc = pair.getContext("2d");
+      if (!pc) throw new Error("no ctx");
+      pc.drawImage(cv, 0, 0);
+      pc.save();
+      pc.translate(w - ovl + w, 0);
+      pc.scale(-1, 1);
+      pc.drawImage(cv, 0, 0);
+      pc.restore();
+      const destW = pair.width / dpr;
+      return { canvas: pair, destW, destH: cssH, period: destW - 1 };
+    }
+    const destW = w / dpr;
+    return { canvas: cv, destW, destH: cssH, period: destW - 1 };
+  }
+
   get isReady(): boolean {
     return this.ready;
   }
 
-  // 노선 지형 렌더러가 표면 텍스처로 쓰는 바닥 이미지(미러 타일 베이크 — 모듈로 랩 이음새 없음)
-  // E5: 테마가 구워졌으면 테마본 반환(캔버스도 drawImage 가능)
+  // 노선 지형 렌더러가 표면 텍스처로 쓰는 바닥 이미지(미러 타일 베이크 — 모듈로 랩 이음새 없음).
+  // 원본 해상도 유지(지형 렌더러는 소스 px를 월드 px에 1:1 매핑) — 테마는 엔들리스 전용이고
+  // 지형 렌더러는 노선(edu/route) 전용이라 테마 미적용 원본으로 충분(LayerSource 계약 유지).
   get groundImage(): LayerSource | null {
-    if (this.themed.ground) return this.themed.ground;
     const img = this.imgs.ground;
     return img && img.complete && img.naturalWidth > 0 ? img : null;
   }
@@ -183,27 +228,46 @@ export class Background {
   draw(ctx: CanvasRenderingContext2D, scroll: number, skipGround = false) {
     const { sky, silhouette, ground } = this.imgs;
     if (!sky || !ground) return;
-    // 원경: 밑단을 지면선에 정렬, 화면 위까지 커버. 미러 타일링으로 이음새 제거.
-    const skyH = Math.max(GROUND_Y, GROUND_Y * 1.02);
-    this.tile(ctx, this.themed.sky ?? sky, GROUND_Y - skyH, skyH, scroll * P_SKY, { mirror: true });
+    // 원경: 밑단을 지면선에 정렬, 화면 위까지 커버.
+    this.blit(ctx, "sky", sky, GROUND_Y - SKY_H, SKY_H, scroll * P_SKY, { mirror: true });
     // 중경(있는 맵만): 하단을 지면선+SIL_SINK에 정렬(컨테이너 줄이 지면 뒤로 묻힘).
-    // 필터 캐시본 사용, 미러 타일링.
     if (silhouette) {
-      this.tile(
-        ctx,
-        this.midFiltered ?? silhouette,
-        GROUND_Y + SIL_SINK - SIL_H,
-        SIL_H,
-        scroll * P_SIL,
-        { alpha: 0.85, mirror: true }
-      );
+      this.blit(ctx, "silhouette", silhouette, GROUND_Y + SIL_SINK - SIL_H, SIL_H, scroll * P_SIL, {
+        alpha: 0.85,
+        mirror: true,
+      });
     }
     // 바닥 스트립: 지면 밴드, 월드 속도로 스크롤 (노선 모드에선 지형 렌더러가 대체)
     if (!skipGround) {
-      this.tile(ctx, this.themed.ground ?? ground, GROUND_Y, VIEW.GROUND_H, scroll * P_GROUND);
+      this.blit(ctx, "ground", ground, GROUND_Y, VIEW.GROUND_H, scroll * P_GROUND);
     }
     // 근경(전경) 레이어: 지면 하단을 빠르게 지나가는 어두운 안전펜스 실루엣 — 깊이감
     this.drawForeground(ctx, scroll);
+  }
+
+  // E8-1: 베이크본 모듈로 블릿(우선) / 베이크 실패 시 원본 per-frame 타일링 폴백
+  private blit(
+    ctx: CanvasRenderingContext2D,
+    key: LayerKey,
+    fallbackImg: HTMLImageElement,
+    dy: number,
+    dh: number,
+    offset: number,
+    opts?: { alpha?: number; mirror?: boolean }
+  ) {
+    const b = this.baked[key];
+    if (!b) {
+      this.tile(ctx, fallbackImg, dy, dh, offset, opts);
+      return;
+    }
+    ctx.save();
+    if (opts?.alpha !== undefined) ctx.globalAlpha = opts.alpha;
+    let start = -(offset % b.period);
+    if (start > 0) start -= b.period;
+    for (let x = start; x < VIEW.W + 1; x += b.period) {
+      ctx.drawImage(b.canvas, x, dy, b.destW, b.destH);
+    }
+    ctx.restore();
   }
 
   // 얇은 전경: 반투명 펜스 기둥·바 실루엣이 월드보다 빠르게(1.3x) 흐름
@@ -225,7 +289,7 @@ export class Background {
     ctx.restore();
   }
 
-  // 지정 높이로 스케일해 가로로 이어붙여 화면 폭을 채운다.
+  // 폴백 전용: 지정 높이로 스케일해 가로로 이어붙여 화면 폭을 채운다(구 per-frame 경로).
   // mirror: 정방향↔좌우반전 교대(타일 인덱스 기준 결정적) — 밝기 구배·패턴 이음새 제거.
   private tile(
     ctx: CanvasRenderingContext2D,

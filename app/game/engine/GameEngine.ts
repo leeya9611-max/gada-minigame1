@@ -332,7 +332,18 @@ export class GameEngine {
     // E3.10-2: 일시정지 — 업데이트·렌더 모두 중단(마지막 프레임 유지, UI가 오버레이 표시)
     if (!this.pausedAt) {
       if (this.phase === "playing") this.update(dt, ts);
-      this.render(ts);
+      // E8-1: 렌더 시간 계측 — __ykPerf 플래그 켜졌을 때만(평시 boolean 체크 1회)
+      const perf = typeof window !== "undefined" && (window as unknown as { __ykPerf?: boolean }).__ykPerf;
+      if (perf) {
+        const t0 = performance.now();
+        this.render(ts);
+        const w = window as unknown as { __ykRender?: { ms: number; frames: number } };
+        const acc = (w.__ykRender ??= { ms: 0, frames: 0 });
+        acc.ms += performance.now() - t0;
+        acc.frames++;
+      } else {
+        this.render(ts);
+      }
     }
 
     this.raf = requestAnimationFrame(this.loop);
