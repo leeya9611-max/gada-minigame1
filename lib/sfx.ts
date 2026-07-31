@@ -26,10 +26,28 @@ let muted = false;
 function ctx(): AudioContext | null {
   if (typeof window === "undefined") return null;
   if (actx !== undefined) return actx;
+  // E8-7: iOS 무음 스위치가 WebAudio(효과음)만 음소거하는 문제 — 오디오 세션을
+  // 미디어 재생(playback) 카테고리로 선언(iOS 17.4+, BGM과 동일 취급). 미지원 브라우저 무시.
+  try {
+    const nav = navigator as unknown as { audioSession?: { type: string } };
+    if (nav.audioSession) nav.audioSession.type = "playback";
+  } catch {
+    /* 무시 */
+  }
   const AC =
     window.AudioContext ??
     (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   actx = AC ? new AC() : null;
+  // 제스처 전 생성으로 suspended면 첫 입력에서 1회 재개(iOS 자동재생 정책)
+  if (actx && actx.state === "suspended") {
+    const resume = () => {
+      void actx?.resume();
+      window.removeEventListener("pointerdown", resume);
+      window.removeEventListener("touchstart", resume);
+    };
+    window.addEventListener("pointerdown", resume);
+    window.addEventListener("touchstart", resume);
+  }
   return actx;
 }
 
