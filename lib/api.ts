@@ -33,24 +33,47 @@ interface NativeBridgeWindow extends Window {
 const RESULT_TYPE = "GAME_RESULT" as const;
 const ACTION_TYPE = "NATIVE_ACTION" as const;
 
+// E7-3: 브리지 송신 관측 — 디버그 오버레이(?debug=1)가 구독. 오버레이 마운트 전 이벤트도
+// 버퍼(__ykBridgeLog)에 남겨 앱 웹뷰에서 devtools 없이 송신 내역을 확인할 수 있게 한다.
+export interface BridgeLogEntry {
+  ts: number;
+  type: string;
+  channel: "ReactNativeWebView" | "webkit" | "parent" | "none";
+  payload: unknown;
+}
+function traceBridge(entry: BridgeLogEntry): void {
+  try {
+    const w = window as unknown as { __ykBridgeLog?: BridgeLogEntry[] };
+    (w.__ykBridgeLog ??= []).push(entry);
+    if (w.__ykBridgeLog.length > 50) w.__ykBridgeLog.shift();
+    window.dispatchEvent(new CustomEvent("yk-bridge", { detail: entry }));
+  } catch {
+    /* 관측 실패는 무시 */
+  }
+}
+
 function post(type: string, payload: unknown): "postMessage" | "none" {
   const msg = JSON.stringify({ type, payload });
   const w = window as NativeBridgeWindow;
 
   if (w.ReactNativeWebView?.postMessage) {
     w.ReactNativeWebView.postMessage(msg);
+    traceBridge({ ts: Date.now(), type, channel: "ReactNativeWebView", payload });
     return "postMessage";
   }
   const handlers = w.webkit?.messageHandlers;
   const handler = type === RESULT_TYPE ? handlers?.gameResult : handlers?.nativeAction;
   if (handler?.postMessage) {
     handler.postMessage(payload);
+    traceBridge({ ts: Date.now(), type, channel: "webkit", payload });
     return "postMessage";
   }
   if (window.parent && window.parent !== window) {
     window.parent.postMessage({ type, payload }, "*");
+    traceBridge({ ts: Date.now(), type, channel: "parent", payload });
     return "postMessage";
   }
+  traceBridge({ ts: Date.now(), type, channel: "none", payload });
   return "none";
 }
 

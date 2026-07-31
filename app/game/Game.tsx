@@ -26,6 +26,7 @@ import {
 } from "@/lib/progress";
 import { playSfx } from "@/lib/sfx";
 import { pauseBgm, startBgm } from "@/lib/bgm";
+import { BridgeDebug } from "./BridgeDebug";
 import {
   fetchNickname,
   generateNickname,
@@ -477,6 +478,12 @@ export default function Game({ token }: { token?: string }) {
     };
   }, [result, screen]);
 
+  // E7-3: ?debug=1 → 브리지 디버그 오버레이(웹뷰 QA용)
+  const [debugMode, setDebugMode] = useState(false);
+  useEffect(() => {
+    setDebugMode(new URLSearchParams(window.location.search).has("debug"));
+  }, []);
+
   // 세로 감지 → 회전 안내
   const [isPortrait, setIsPortrait] = useState(false);
   useEffect(() => {
@@ -628,6 +635,8 @@ export default function Game({ token }: { token?: string }) {
       </div>
 
       {isPortrait && <RotateHint />}
+      {/* E7-3: 브리지 디버그 오버레이 — ?debug=1 웹뷰 QA 전용, 게임 화면 불변 */}
+      {debugMode && <BridgeDebug />}
     </main>
   );
 }
