@@ -396,9 +396,9 @@ export default function Game({ token }: { token?: string }) {
     setShowCharge(false);
   }, []);
 
-  // ── 입력(양손, 쿠키런식): 왼쪽 절반 홀드=슬라이드 / 오른쪽 절반 탭=점프 ──
-  // 아래 스와이프 슬라이드는 보조 입력으로 유지.
-  // 손가락별(pointerId) 추적 — 왼손 슬라이드 홀드 중 오른손 점프 탭 가능.
+  // ── 입력(E8-5, 좌우 대칭): 아무 곳이나 탭=점프 / 아래로 45px 스와이프=슬라이드 ──
+  // 스와이프 시 선행된 점프는 slide()의 급강하+착지 버퍼(E6-QA2)가 짧은 홉으로 흡수한다.
+  // 손가락별(pointerId) 추적 — 한 손가락 슬라이드 홀드 중 다른 손가락 점프 탭 가능.
   const pointers = useRef(new Map<number, { startY: number; slide: boolean }>());
 
   // E6-1: iOS 구형 웹킷은 touch-action:none을 부분적으로만 존중 — 게임 영역 터치 스크롤/러버밴드를
@@ -417,17 +417,9 @@ export default function Game({ token }: { token?: string }) {
       if (result || screen !== "game") return;
       const eng = engineRef.current;
       if (!eng) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const rx = (e.clientX - rect.left) / rect.width;
       pointers.current.set(e.pointerId, { startY: e.clientY, slide: false });
       if (hud.phase !== "playing") return;
-      if (rx < 0.5) {
-        eng.slide();
-        const p = pointers.current.get(e.pointerId);
-        if (p) p.slide = true;
-      } else {
-        eng.onTap();
-      }
+      eng.onTap(); // 위치 무관 점프 — 슬라이드는 onPointerMove의 아래 스와이프가 담당
     },
     [result, screen, hud.phase]
   );
@@ -437,7 +429,7 @@ export default function Game({ token }: { token?: string }) {
       if (result) return;
       const p = pointers.current.get(e.pointerId);
       if (!p || p.slide) return;
-      // 오른쪽 구역에서도 아래로 45px 이상 끌면 슬라이드
+      // 아래로 45px 이상 끌면 슬라이드(전 영역, E8-5)
       if (e.clientY - p.startY > 45) {
         engineRef.current?.slide();
         p.slide = true;
@@ -796,8 +788,9 @@ function ControlHints() {
   };
   return (
     <>
-      <div style={{ ...pill, left: "12%" }}>왼쪽 누르면 슬라이드</div>
-      <div style={{ ...pill, right: "12%" }}>오른쪽 탭하면 점프</div>
+      {/* E8-5: 좌우 대칭 입력 — 구역을 지시하지 않는 문구, 배치만 대칭 유지 */}
+      <div style={{ ...pill, left: "12%" }}>아래로 밀면 슬라이드</div>
+      <div style={{ ...pill, right: "12%" }}>탭하면 점프</div>
       <style>{`@keyframes hintFade{0%,70%{opacity:1}100%{opacity:0}}`}</style>
     </>
   );
