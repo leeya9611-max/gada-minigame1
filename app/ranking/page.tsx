@@ -86,6 +86,9 @@ function RankingBoard() {
 
   const me = board !== "loading" && board ? board.me : null;
   const myTier = tierOf(me?.weekScore ?? 0);
+  // E4-13-3: 내가 목록 안에 이미 보이면 하단 고정 행 생략(중복 제거, ~50px 절약)
+  const meInList =
+    me !== null && board !== "loading" && !!board && board.entries.some((r) => r.rank === me.rank);
 
   if (portrait) return <RotateHint />;
 
@@ -162,11 +165,13 @@ function RankingBoard() {
             }}
           />
           {/* E4-9: 숨김 기준 430→320px — 정말 극단적으로 낮은 화면에서만 숨김 */}
-          <style>{`@media (max-height: 320px){ .rk-char{ display: none } }`}</style>
+          {/* E4-13-4: 짧은 화면 전용 압축(기본 스타일 불변) — !important로 인라인 오버라이드 */}
+          <style dangerouslySetInnerHTML={{ __html: "@media (max-height: 320px){ .rk-char{ display: none } } @media (max-height: 380px){ .rk-frame{ border-width: 10px !important; padding: 4px 10px !important; } .rk-colhead{ display: none !important; } .rk-summary{ margin: 0 4px 4px !important; padding-bottom: 4px !important; } .rk-list{ gap: 3px !important; } .rk-row{ padding: 4px 10px !important; gap: 8px !important; } .rk-row > div{ font-size: 12.5px !important; } .rk-row img{ height: 22px !important; width: auto !important; } .rk-me{ padding: 0 4px 3px !important; gap: 8px !important; } .rk-me > img{ width: 30px !important; height: 30px !important; } .rk-me > div > div:first-child{ font-size: 12.5px !important; } .rk-me button{ padding: 2px 9px !important; font-size: 11px !important; margin-top: 1px !important; } .rk-me button img{ height: 11px !important; } }" }} />
         </div>
 
         {/* ── 우측: 통합 패널(내 정보 + 티켓 + 순위 리스트) — 프레임은 이쪽에만 ── */}
         <section
+          className="rk-frame"
           style={{
             ...frameStyle,
             flex: 1.3,
@@ -178,7 +183,7 @@ function RankingBoard() {
           }}
         >
           {/* 내 티어 + 닉네임 + 티켓/충전 (구 aside 상단부) */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "2px 4px 8px" }}>
+          <div className="rk-me" style={{ display: "flex", alignItems: "center", gap: 12, padding: "2px 4px 8px" }}>
             <TierBadge tier={myTier} />
             <div style={{ minWidth: 0, flex: 1 }}>
               {nickname && (
@@ -211,29 +216,36 @@ function RankingBoard() {
               )}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 6, margin: "0 4px 8px" }}>
-            <div style={statBox}>
-              <div style={statLabel}>이번 주</div>
-              <div style={statValue}>{me ? me.weekScore.toLocaleString() : "–"}</div>
-            </div>
-            <div style={statBox}>
-              <div style={statLabel}>오늘 베스트</div>
-              <div style={statValue}>{me ? me.todayBest.toLocaleString() : "–"}</div>
-            </div>
-            <div style={statBox}>
-              <div style={statLabel}>순위</div>
-              <div style={{ ...statValue, color: "#ffd23f" }}>{me ? `${me.rank}위` : "–"}</div>
-            </div>
+          {/* E4-13-1: 스탯 3박스 → 한 줄 인라인 요약(~40px 절약). statLabel nowrap 유지(E4-7) */}
+          <div
+            className="rk-summary"
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 10,
+              flexWrap: "wrap",
+              margin: "0 4px 6px",
+              paddingBottom: 6,
+              borderBottom: "1px solid rgba(255,255,255,0.12)",
+            }}
+          >
+            <span style={{ ...statLabel, fontSize: 12.5, color: "#cdd8ec", fontWeight: 700 }}>
+              이번 주 <b style={{ color: "#8ee6d0", fontVariantNumeric: "tabular-nums" }}>{me ? me.weekScore.toLocaleString() : "–"}</b>
+              {" · "}오늘 <b style={{ fontVariantNumeric: "tabular-nums" }}>{me ? me.todayBest.toLocaleString() : "–"}</b>
+              {" · "}<b style={{ color: "#ffd23f" }}>{me ? `${me.rank}위` : "–"}</b>
+            </span>
+            <span style={{ ...statLabel }}>주간 점수 = 일일 베스트 합산</span>
           </div>
-          <div style={{ height: 1, background: "rgba(255,255,255,0.12)", margin: "0 2px 8px" }} />
 
-          <div style={{ display: "flex", fontSize: 11, color: "#8fa3c4", padding: "2px 10px 8px" }}>
+          {/* E4-13-2: 컬럼 헤더 — 짧은 화면에선 숨김(설명은 위 요약 줄에 한 번) */}
+          <div className="rk-colhead" style={{ display: "flex", fontSize: 11, color: "#8fa3c4", padding: "2px 10px 6px" }}>
             <span style={{ width: 46 }}>순위</span>
-            <span style={{ flex: 1 }}>닉네임 · 주간 점수 = 일일 베스트 합산</span>
+            <span style={{ flex: 1 }}>닉네임</span>
             <span>주간 점수</span>
           </div>
 
           <ul
+            className="rk-list"
             style={{
               listStyle: "none",
               margin: 0,
@@ -244,6 +256,7 @@ function RankingBoard() {
               overflowY: "auto",
               WebkitOverflowScrolling: "touch",
               flex: 1,
+              minHeight: 0,
             }}
           >
             {board === "loading" && (
@@ -273,8 +286,8 @@ function RankingBoard() {
               ))}
           </ul>
 
-          {/* 내 순위 고정 행(목록 스크롤과 무관하게 하단 고정) — E4-12: 어두운 깔개로 목록과 분리 */}
-          {me && (
+          {/* 내 순위 고정 행 — 목록 밖 순위일 때만(E4-13-3). E4-12 골드 톤 유지 */}
+          {me && !meInList && (
             <div
               style={{
                 borderTop: "1px solid rgba(255,255,255,0.1)",
@@ -310,6 +323,7 @@ function RankRow({
   const top3 = rank <= 3;
   return (
     <li
+      className="rk-row"
       style={{
         display: "flex",
         alignItems: "center",
@@ -406,25 +420,11 @@ const panel: React.CSSProperties = {
   padding: 14,
 };
 
-const statBox: React.CSSProperties = {
-  flex: 1,
-  background: "rgba(0,0,0,0.25)",
-  borderRadius: 10,
-  padding: "7px 4px",
-  textAlign: "center",
-  minWidth: 0,
-};
 const statLabel: React.CSSProperties = {
   fontSize: "clamp(8px, 2vw, 10.5px)",
   color: "#8fa3c4",
   whiteSpace: "nowrap", // E4-7: "오늘 베스트" 한 줄 보장
 };
-const statValue: React.CSSProperties = {
-  fontSize: 15,
-  fontWeight: 800,
-  fontVariantNumeric: "tabular-nums",
-};
-
 // E4-6 → E3.25-2: CTA 이미지 border-image(좌우 캡 3-slice) — 파일 없으면 기존 글로시 그라데이션(bg) 폴백
 function chargeBtn(cta: string, bg: string): React.CSSProperties {
   return {
