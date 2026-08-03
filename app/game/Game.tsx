@@ -1194,38 +1194,56 @@ function LobbyScreen({
   );
 }
 
-// E3.28-4 → E3.32-R: 티켓 재화 바 — [캡슐(아이콘+숫자)] + 우측 끝에 겹치는 원형 + 버튼(레퍼런스 스타일).
+// E3.28-4 → E3.32-R2: 티켓 재화 바 — 개수만큼 아이콘 스택(최대 5, 겹침) + 숫자 + 큰 + 버튼.
 // 아이콘·버튼 이미지 폴백(🎟/초록 CSS 원) 유지, 44px 히트영역·hud-btn 눌림 피드백 유지.
+const TICKET_ICON_H = "clamp(24px, 3.8vh, 32px)";
+const PLUS_H = "clamp(40px, 6.2vh, 52px)";
+
 function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => void }) {
   const [iconBroken, setIconBroken] = useState(false);
   const [plusBroken, setPlusBroken] = useState(false);
+  const shown = Math.max(1, Math.min(tickets, 5)); // 시각 스택은 최대 5장
   return (
     <div style={{ display: "flex", alignItems: "center" }}>
-      {/* 캡슐: 아이콘(안쪽 좌) + 숫자(우) — 우측 패딩은 + 버튼 겹침 공간 */}
+      {/* 캡슐: 아이콘 스택(개수 시각화) + 숫자 — 우측 패딩은 + 버튼 겹침 공간 */}
       <span
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 8,
+          gap: 7,
           background: "rgba(0,0,0,0.55)",
           border: "1px solid rgba(255,255,255,0.18)",
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -2px 4px rgba(0,0,0,0.4)",
           borderRadius: 999,
-          padding: "4px 30px 4px 10px",
+          padding: "4px 26px 4px 10px",
         }}
       >
         {iconBroken ? (
-          <span style={{ fontSize: "clamp(20px, 3.2vh, 26px)", lineHeight: 1 }}>🎟</span>
+          <span style={{ fontSize: "clamp(20px, 3.2vh, 26px)", lineHeight: 1, filter: tickets === 0 ? "grayscale(1) opacity(0.5)" : "none" }}>
+            🎟
+          </span>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src="/assets/ui/ticket_icon.png"
-            alt=""
-            aria-hidden
-            draggable={false}
-            onError={() => setIconBroken(true)}
-            style={{ height: "clamp(24px, 3.8vh, 32px)", width: "auto" }}
-          />
+          <span style={{ display: "inline-flex", alignItems: "center" }}>
+            {Array.from({ length: shown }, (_, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src="/assets/ui/ticket_icon.png"
+                alt=""
+                aria-hidden
+                draggable={false}
+                onError={() => setIconBroken(true)}
+                style={{
+                  height: TICKET_ICON_H,
+                  width: "auto",
+                  // 부채꼴 겹침 — 뒤 장이 위로(레퍼런스 룩)
+                  // 티켓은 가로형(1.9:1) — 폭의 ~55%를 겹침(높이 기준 -1.05)
+                  marginLeft: i === 0 ? 0 : `calc(${TICKET_ICON_H} * -1.25)`,
+                  filter: tickets === 0 ? "grayscale(1) opacity(0.5)" : "drop-shadow(0 1px 2px rgba(0,0,0,0.35))",
+                }}
+              />
+            ))}
+          </span>
         )}
         <span
           style={{
@@ -1234,14 +1252,12 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
             fontWeight: 800,
             textShadow: "0 1px 2px rgba(0,0,0,0.4)",
             fontVariantNumeric: "tabular-nums",
-            minWidth: 24,
-            textAlign: "right",
           }}
         >
           {tickets}
         </span>
       </span>
-      {/* 원형 + 버튼: 캡슐 우측 끝에 절반 겹침 → 광고 시청 요청(랭킹 페이지와 동일 동작) */}
+      {/* 원형 + 버튼(확대): 캡슐 우측 끝에 겹침 → 광고 시청 요청(랭킹 페이지와 동일 동작) */}
       <button
         onClick={onCharge}
         aria-label="티켓 충전"
@@ -1255,7 +1271,7 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          marginLeft: "calc(clamp(32px, 4.8vh, 42px) * -0.55 - 4px)",
+          marginLeft: `calc(${PLUS_H} * -0.6)`,
           zIndex: 1,
           cursor: "pointer",
           lineHeight: 0,
@@ -1267,14 +1283,14 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              width: "clamp(32px, 4.8vh, 42px)",
-              height: "clamp(32px, 4.8vh, 42px)",
+              width: PLUS_H,
+              height: PLUS_H,
               borderRadius: "50%",
               background: "linear-gradient(180deg, #58d685 0%, #2fae5c 100%)",
               border: "1.5px solid rgba(255,255,255,0.45)",
               boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
               color: "#fff",
-              fontSize: 17,
+              fontSize: 22,
               fontWeight: 900,
               lineHeight: 1,
             }}
@@ -1289,7 +1305,7 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
             aria-hidden
             draggable={false}
             onError={() => setPlusBroken(true)}
-            style={{ height: "clamp(32px, 4.8vh, 42px)", width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.45))" }}
+            style={{ height: PLUS_H, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.45))" }}
           />
         )}
       </button>
