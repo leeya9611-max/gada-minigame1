@@ -143,6 +143,12 @@ export const SEASON = {
   SCORE_CAP_BUFFER: 200, // 시작 직후 커피 대체 코인 등 고정 오차 허용
 } as const;
 
+// E3.34: 출석 보상 — 7일 주기, 7일차는 3장(리텐션 스파이크). 지급 권위는 네이티브(웹은 요청+표시).
+export const ATTENDANCE = {
+  CYCLE: 7,
+  REWARDS: [1, 1, 1, 1, 1, 1, 3], // 일차별 티켓 수(index = dayIndex - 1)
+} as const;
+
 // E4-5 보상 정책 세이프 모드(법적 검토 반영): true면 성적 연동 포인트 표시·포인트 교환을 숨긴다.
 // 법무 결론에 따라 false로 되돌리면 기존 동작(예상 포인트 표시·포인트 교환 버튼) 복귀.
 export const REWARD_SAFE_MODE = true;

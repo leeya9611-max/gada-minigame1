@@ -18,7 +18,8 @@ export type NativeAction =
   | "exchangePointsForTicket"
   | "inviteFriend"
   | "shareResult"
-  | "exitGame"; // E3.28: 로비 나가기 — 네이티브가 웹뷰 닫기 처리(웹은 요청만)
+  | "exitGame" // E3.28: 로비 나가기 — 네이티브가 웹뷰 닫기 처리(웹은 요청만)
+  | "claimAttendanceReward"; // E3.34: 출석 보상 지급(티켓) — 지급 권위는 네이티브
 
 interface NativeBridgeWindow extends Window {
   ReactNativeWebView?: { postMessage: (msg: string) => void };

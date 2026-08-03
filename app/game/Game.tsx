@@ -27,6 +27,7 @@ import {
 import { playSfx, preloadSfx } from "@/lib/sfx";
 import { pauseBgm, startBgm } from "@/lib/bgm";
 import { applySoundSettings, loadSoundSettings, setBgmEnabled, setSfxEnabled } from "@/lib/settings";
+import { claimedTodayLocal, fetchAttendance, markClaimedToday, postAttendance, type AttendanceState } from "@/lib/attendance";
 import { BridgeDebug } from "./BridgeDebug";
 import {
   fetchNickname,
@@ -491,6 +492,44 @@ export default function Game({ token }: { token?: string }) {
   // E8-6: 환경설정(사운드) 패널 — 로비 톱니바퀴·일시정지 오버레이 공용
   const [showSettings, setShowSettings] = useState(false);
 
+  // E3.34: 출석 보상 — 조회 실패(null)면 조용히 비활성(로비 진입을 막지 않는다)
+  const [attendance, setAttendance] = useState<AttendanceState | null>(null);
+  const [showAttendance, setShowAttendance] = useState(false);
+  const attendanceShownRef = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void fetchAttendance(user.userId).then((a) => alive && setAttendance(a));
+    return () => {
+      alive = false;
+    };
+  }, [user.userId]);
+  // 노출 흐름: title(→nickname)→lobby 첫 진입 시 1회 — 오늘 이미 받았으면(서버·로컬 캐시) 생략
+  useEffect(() => {
+    if (screen !== "lobby" || attendanceShownRef.current) return;
+    if (!attendance || attendance.claimedToday || claimedTodayLocal()) return;
+    attendanceShownRef.current = true;
+    setShowAttendance(true);
+  }, [screen, attendance]);
+
+  // 수령: 서버 기록(PK가 중복 차단) → 네이티브 지급 요청 + 로컬 스텁 +reward
+  const claimAttendance = useCallback(async () => {
+    const res = await postAttendance(user.userId);
+    if (res?.ok && res.reward) {
+      requestNativeAction("claimAttendanceReward");
+      // TODO(앱팀 연동): 네이티브 지급으로 교체 — 전까지 광고 티켓과 동일한 로컬 스텁
+      setTickets((t) => {
+        const next = t + (res.reward ?? 0);
+        saveTickets(next);
+        return next;
+      });
+      logEvent("attendance_claim", { dayIndex: res.dayIndex, reward: res.reward });
+      playSfx("item_get");
+    }
+    markClaimedToday();
+    setAttendance((a) => (a ? { ...a, claimedToday: true } : a));
+    setShowAttendance(false);
+  }, [user.userId]);
+
   // 세로 감지 → 회전 안내
   // E8-4: 일부 모바일 웹뷰에서 matchMedia("(orientation: portrait)")가 false로 고정되는 문제 —
   // 실제 뷰포트 비율(innerHeight > innerWidth)을 1차 기준으로 하고 matchMedia는 OR 보조.
@@ -600,6 +639,8 @@ export default function Game({ token }: { token?: string }) {
             onStartEndless={startEndless}
             onChargeTicket={() => charge("watchAdForTicket")}
             onOpenSettings={() => setShowSettings(true)}
+            onOpenAttendance={() => setShowAttendance(true)}
+            attendanceReady={!!attendance && !attendance.claimedToday && !claimedTodayLocal()}
             loading={!spritesLoaded}
           />
         )}
@@ -648,6 +689,9 @@ export default function Game({ token }: { token?: string }) {
       </div>
 
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      {showAttendance && attendance && (
+        <AttendancePanel state={attendance} onClaim={claimAttendance} onClose={() => setShowAttendance(false)} />
+      )}
       {isPortrait && <RotateHint />}
       {/* E7-3: 브리지 디버그 오버레이 — ?debug=1 웹뷰 QA 전용, 게임 화면 불변 */}
       {debugMode && <BridgeDebug />}
@@ -1003,6 +1047,8 @@ function LobbyScreen({
   onStartEndless,
   onChargeTicket,
   onOpenSettings,
+  onOpenAttendance,
+  attendanceReady,
   loading,
 }: {
   nickname: string | null;
@@ -1014,6 +1060,8 @@ function LobbyScreen({
   onStartEndless: () => void;
   onChargeTicket: () => void;
   onOpenSettings: () => void;
+  onOpenAttendance: () => void;
+  attendanceReady: boolean; // 받을 게 있으면 true(빨간 점 배지)
   loading: boolean;
 }) {
   return (
@@ -1080,10 +1128,48 @@ function LobbyScreen({
 
         {/* 오른쪽: 랭킹보기(작게) → 안전교육 → 무한 잔업 세로 스택 */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ alignSelf: "flex-end", display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={onOpenAttendance}
+            className="hud-btn"
+            style={{
+              position: "relative",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              minHeight: 44,
+              fontSize: 14,
+              fontWeight: 800,
+              color: "#fff",
+              textShadow: "0 1px 2px rgba(0,0,0,0.4)",
+              background: "rgba(0,0,0,0.42)",
+              border: "1px solid rgba(255,255,255,0.22)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
+              padding: "7px 14px",
+              borderRadius: 17,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            🎁 출석
+            {attendanceReady && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: 4,
+                  right: 4,
+                  width: 9,
+                  height: 9,
+                  borderRadius: "50%",
+                  background: "#ff4d4d",
+                  border: "1.5px solid rgba(255,255,255,0.8)",
+                }}
+              />
+            )}
+          </button>
           <Link
             href="/ranking"
             style={{
-              alignSelf: "flex-end",
               display: "inline-flex",
               alignItems: "center",
               gap: 7,
@@ -1105,6 +1191,7 @@ function LobbyScreen({
           >
             🏆 랭킹보기
           </Link>
+          </div>
 
           <button
             onClick={onStartEdu}
@@ -1435,6 +1522,81 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
         />
       )}
     </button>
+  );
+}
+
+// E3.34: 출석 보상 팝업 — 7칸 가로(가로 화면 세로 여유 300px대 → 칸 높이 clamp), 기존 오버레이 패턴
+function AttendancePanel({
+  state,
+  onClaim,
+  onClose,
+}: {
+  state: AttendanceState;
+  onClaim: () => void;
+  onClose: () => void;
+}) {
+  const { dayIndex, claimedToday, rewards } = state;
+  return (
+    <div
+      style={{ ...overlayStyle, background: "rgba(14,21,38,0.85)", zIndex: 60 }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div className={headlineFont.className} style={{ fontSize: "clamp(20px, 5vh, 26px)", marginBottom: 4 }}>
+        🎁 출석 보상
+      </div>
+      <div style={{ fontSize: 12, color: "#8fa3c4", marginBottom: 10 }}>
+        매일 접속하고 티켓 받아가세요 — 7일차엔 3장!
+      </div>
+      <div style={{ display: "flex", gap: 6, width: "100%", maxWidth: 560 }}>
+        {rewards.map((reward, i) => {
+          const day = i + 1;
+          const received = claimedToday ? day <= dayIndex : day < dayIndex;
+          const today = day === dayIndex && !claimedToday;
+          return (
+            <div
+              key={day}
+              style={{
+                ...resultCard,
+                maxWidth: "none",
+                padding: "clamp(4px, 1.2vh, 8px) 2px",
+                height: "clamp(64px, 17vh, 96px)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 2,
+                opacity: received ? 0.45 : 1,
+                border: today ? "2px solid #ffd23f" : "2px solid transparent",
+                transform: today ? "scale(1.07)" : "none",
+                boxShadow: today
+                  ? "0 0 12px rgba(255,210,63,0.4), inset 0 1px 0 rgba(255,255,255,0.14)"
+                  : undefined,
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 800, color: today ? "#ffd23f" : "#8fa3c4" }}>{day}일</div>
+              {received ? (
+                <div style={{ fontSize: "clamp(16px, 4vh, 22px)" }}>✅</div>
+              ) : (
+                <BtnIcon src="/assets/ui/ticket_icon.png" fallback="🎟" size={26} />
+              )}
+              <div style={{ fontSize: 11, fontWeight: 800, color: reward > 1 ? "#ffd23f" : "#cdd8ec" }}>×{reward}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 10, marginTop: "clamp(10px, 2.6vh, 18px)" }}>
+        <button
+          onClick={onClaim}
+          disabled={claimedToday}
+          style={{ ...primaryBtn, marginBottom: 0, minWidth: 200, opacity: claimedToday ? 0.55 : 1, cursor: claimedToday ? "default" : "pointer" }}
+        >
+          {claimedToday ? "내일 또 오세요" : `${rewards[dayIndex - 1]}장 받기`}
+        </button>
+        <button onClick={onClose} style={{ ...secondaryBtn, minWidth: 100 }}>
+          닫기
+        </button>
+      </div>
+    </div>
   );
 }
 

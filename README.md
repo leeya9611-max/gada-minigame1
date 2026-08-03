@@ -21,6 +21,21 @@ pnpm dev
    - 미설정 시 API는 메모리 스텁으로 폴백(개발용) — 운영에선 반드시 설정
 2. **빌드** — `npm run build` (prebuild로 점프 클리어런스 게이트 자동 실행). dev 서버 켠 채 빌드 금지.
 3. DB 스키마·RPC는 작업지시서 E7-0의 SQL을 Supabase SQL Editor에서 1회 실행.
+   E3.34 출석 보상 테이블도 함께 실행:
+
+   ```sql
+   -- 출석 보상(E3.34): 하루 1회는 PK가 보장, day_index는 행 수 기반 7일 순환
+   create table if not exists attendance (
+     user_id    text not null references users(user_id) on delete cascade,
+     claim_date date not null,           -- KST
+     day_index  int  not null,           -- 1~7
+     reward     int  not null,           -- 지급 티켓 수
+     created_at timestamptz not null default now(),
+     primary key (user_id, claim_date)
+   );
+   alter table attendance enable row level security;
+   grant all on table attendance to service_role;
+   ```
 4. supabase-js가 Node 20 지원 중단 예고 — Vercel 프로젝트 설정에서 Node.js 22.x 권장.
 
 ## 기술 선택

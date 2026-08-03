@@ -6,7 +6,8 @@ export type GameEventName =
   | "play_end" // { mode, outcome, playDuration, score }
   | "ticket_spend" // { left }
   | "edu_complete"
-  | "ranking_view";
+  | "ranking_view"
+  | "attendance_claim"; // { dayIndex, reward }
 
 export function logEvent(name: GameEventName, props: Record<string, unknown> = {}): void {
   if (typeof window === "undefined") return;
