@@ -53,6 +53,18 @@ const ITEM_LABEL: Record<ItemKind, string> = {
   booster: `${Math.round(ITEM_EFFECT.BOOSTER_MS / 1000)}초 무적 질주!`,
   magnet: `${Math.round(ITEM_EFFECT.MAGNET_MS / 1000)}초 코인 자석`,
 };
+// E3.33: 게이지용 라운드 사각형 패스
+function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
 function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -1054,6 +1066,8 @@ export class GameEngine {
 
     // E3.6-3 부스터 연출 a) 골드 모션 트레일(잔상 3장, 40~60ms 간격) — 기존 오라 대체
     const boosting = now < this.boosterUntil && this.phase === "playing";
+    // E3.33-5: 종료 1초 전부터 트레일·스피드라인·광채가 잦아들며 게이지와 이중 신호
+    const boostFade = boosting ? Math.min(1, (this.boosterUntil - now) / 1000) : 0;
     if (boosting) {
       const offs = [144, 96, 48]; // ms 과거
       const alphas = [0.08, 0.15, 0.25];
@@ -1061,7 +1075,7 @@ export class GameEngine {
         const snap = this.poseHistory.find((h) => now - h.t >= offs[i]);
         if (!snap) continue;
         ctx.save();
-        ctx.globalAlpha = alphas[i];
+        ctx.globalAlpha = alphas[i] * boostFade;
         drawCharGold(ctx, "gimbanjang", snap.file, snap.footX - (offs[i] / 1000) * this.worldSpeed * 0.4, snap.footY, snap.hOverride);
         ctx.restore();
       }
@@ -1072,7 +1086,7 @@ export class GameEngine {
       for (let i = 0; i < 5; i++) {
         const ph = ((now / 110 + i * 0.73) % 1 + 1) % 1;
         const y = this.player.y + 8 + ((i * 37) % Math.max(20, PLAYER.H - 10));
-        ctx.globalAlpha = (1 - ph) * 0.55;
+        ctx.globalAlpha = (1 - ph) * 0.55 * boostFade;
         const x = this.player.x - 6 - ph * 150;
         ctx.beginPath();
         ctx.moveTo(x, y);
@@ -1088,7 +1102,7 @@ export class GameEngine {
     if (boosting && this.player.lastPose) {
       const lp = this.player.lastPose;
       ctx.save();
-      ctx.globalAlpha = 0.22 + Math.sin(now / 110) * 0.08;
+      ctx.globalAlpha = (0.22 + Math.sin(now / 110) * 0.08) * boostFade;
       drawCharGold(ctx, "gimbanjang", lp.file, lp.footX, lp.footY, lp.hOverride);
       ctx.restore();
     }
@@ -1125,6 +1139,9 @@ export class GameEngine {
 
     // E6-QA: 대사 말풍선 — 상단 안내 배너(DOM)와 겹치던 중앙 고정 표시를 화자 머리 위로 이동
     this.drawDialogue(ctx, now);
+
+    // E3.33: 부스터·자석 남은 시간 게이지(좌상단 HP 아래) — DOM 배지(⚡/🧲) 대체
+    this.drawEffectGauges(ctx, now);
 
     this.drawDangerVignette(ctx, now); // E3.5: 위기 비네트(가장자리)
 
@@ -1480,6 +1497,61 @@ export class GameEngine {
 
   // 박소장: 플레이어 뒤 gap 거리. 좌측 가장자리 안쪽으로 클램프해 항상 보이게.
   // 김반장과 동일한 목표 화면 키(TARGET_CHAR_H)로 그린다. gap 작을수록 위기 연출.
+  // E3.33: 효과 지속시간 게이지 — 좌상단 HP 행 아래, 세로 스택. 남은 1.5s부터 경고색+깜빡임
+  // (마지막 0.5s는 더 빠르게). hud로 흘리지 않고 draw에서 직접 계산(프레임 비용 최소).
+  private drawEffectGauges(ctx: CanvasRenderingContext2D, now: number) {
+    if (this.caughtAt || this.phase !== "playing") return;
+    const items: { icon: string; until: number; total: number; color: string }[] = [];
+    if (now < this.boosterUntil)
+      items.push({ icon: "⚡", until: this.boosterUntil, total: ITEM_EFFECT.BOOSTER_MS, color: "#ff9500" });
+    if (now < this.magnetUntil)
+      items.push({ icon: "🧲", until: this.magnetUntil, total: ITEM_EFFECT.MAGNET_MS, color: "#5ec8ff" });
+    if (!items.length) return;
+
+    // 좌상단 HP 패널(≈12~56) + 감속 배지 행 아래 — 배너(top 13%≈58, 중앙)·말풍선(y≥168)과 비겹침
+    let y = 92;
+    for (const it of items) {
+      const remain = it.until - now;
+      const frac = Math.max(0, Math.min(1, remain / it.total));
+      const warning = remain <= 1500;
+      const blinkPeriod = remain <= 500 ? 120 : 250;
+      const blink = warning ? (Math.floor(now / blinkPeriod) % 2 === 0 ? 1 : 0.35) : 1;
+      const barX = 36;
+      const barW = 96;
+      const barH = 10;
+
+      ctx.save();
+      // 아이콘
+      ctx.font = "14px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.globalAlpha = 0.95;
+      ctx.fillText(it.icon, 14, y + barH / 2 + 1);
+      // 트랙
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      roundRectPath(ctx, barX, y, barW, barH, 5);
+      ctx.fill();
+      // 채움(경고 시 색 전환 + 깜빡임)
+      ctx.globalAlpha = 0.95 * blink;
+      ctx.fillStyle = warning ? "#ff5a3c" : it.color;
+      if (frac > 0) {
+        roundRectPath(ctx, barX, y, Math.max(barH, barW * frac), barH, 5);
+        ctx.fill();
+      }
+      // 남은 초(보조)
+      ctx.globalAlpha = 0.95;
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillStyle = warning ? "#ffb3a0" : "#fff";
+      ctx.strokeStyle = "rgba(31,42,68,0.8)";
+      ctx.lineWidth = 2.5;
+      const label = (remain / 1000).toFixed(1);
+      ctx.strokeText(label, barX + barW + 7, y + barH / 2 + 1);
+      ctx.fillText(label, barX + barW + 7, y + barH / 2 + 1);
+      ctx.restore();
+      y += 18;
+    }
+  }
+
   // E6-QA: 화자(박소장/김반장) 머리 위 말풍선 — "이름:" 프리픽스로 화자 판별, 프리픽스는 떼고 표시.
   // 잡힘 연출 중엔 숨김(합성 컷·펀치인과 충돌 방지).
   private drawDialogue(ctx: CanvasRenderingContext2D, now: number) {

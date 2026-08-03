@@ -296,6 +296,10 @@ export default function Game({ token }: { token?: string }) {
       onGameOver: handleGameOver,
     });
     engineRef.current = engine;
+    // E3.33: ?debug=1 QA 훅 — 효과 강제 발동 등 기기 검증용(프로덕션 플로우 불변)
+    if (new URLSearchParams(window.location.search).has("debug")) {
+      (window as unknown as { __ykEngine?: unknown }).__ykEngine = engine;
+    }
     engine.start();
     return () => engine.stop();
   }, [user.userId, handleGameOver]);
@@ -1978,8 +1982,7 @@ function TopHud({ hud }: { hud: HudState }) {
           ))}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          {hud.boosterActive && <Badge color="#ff9500">⚡ 무적</Badge>}
-          {hud.magnetActive && <Badge color="#5ec8ff">🧲 자석</Badge>}
+          {/* E3.33-7: ⚡/🧲 DOM 배지는 캔버스 지속시간 게이지로 통합(중복 제거) — 🐢 감속만 유지 */}
           {hud.slowActive && <Badge color="#e63946">🐢 피격 감속</Badge>}
         </div>
       </div>
