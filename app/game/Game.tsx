@@ -1238,11 +1238,26 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
                   width: "auto",
                   // 부채꼴 겹침 — 뒤 장이 위로(레퍼런스 룩)
                   // 티켓은 가로형(1.9:1) — 폭의 ~55%를 겹침(높이 기준 -1.05)
-                  marginLeft: i === 0 ? 0 : `calc(${TICKET_ICON_H} * -1.25)`,
+                  marginLeft: i === 0 ? 0 : `calc(${TICKET_ICON_H} * -1.42)`,
                   filter: tickets === 0 ? "grayscale(1) opacity(0.5)" : "drop-shadow(0 1px 2px rgba(0,0,0,0.35))",
                 }}
               />
             ))}
+          </span>
+        )}
+        {/* 5장 초과분은 말줄임으로 표현 */}
+        {!iconBroken && tickets > 5 && (
+          <span
+            style={{
+              color: "#f2b8c0",
+              fontSize: "clamp(14px, 2.2vh, 18px)",
+              fontWeight: 900,
+              letterSpacing: 1,
+              marginLeft: -3,
+              lineHeight: 1,
+            }}
+          >
+            …
           </span>
         )}
         <span
