@@ -1035,25 +1035,33 @@ function LobbyScreen({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span
           style={{
-            fontSize: 12,
+            // E3.32-3: 우상단 확대와 균형(같은 비율)
+            fontSize: "clamp(14px, 2.1vh, 17px)",
             fontWeight: 700,
             color: "#aebfda",
             background: "rgba(0,0,0,0.32)",
             border: "1px solid rgba(255,255,255,0.14)",
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1)",
-            padding: "5px 12px",
+            padding: "6px 15px",
             borderRadius: 999,
             whiteSpace: "nowrap",
           }}
         >
           🏃 누적 {totalM.toLocaleString()}m
         </span>
-        {/* E3.28: 우상단 — 티켓 재화 바 + 나가기 버튼 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {/* E3.28 → E3.32: 우상단 — 개별 요소 유지(E3.27), 확대 + 44px 히트영역 + 눌림 피드백 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <TicketBar tickets={tickets} onCharge={onChargeTicket} />
           <SettingsButton onClick={onOpenSettings} />
           <ExitButton />
         </div>
+        {/* E3.32-4: 눌림 피드백 — 스케일 + 그림자 축소(자식 선택자라 dangerouslySetInnerHTML, E4-13 교훈) */}
+        <style
+          dangerouslySetInnerHTML={{
+            __html:
+              ".hud-btn{ transition: transform 0.08s ease } .hud-btn:active{ transform: scale(0.94) } .hud-btn:active img{ filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)) !important }",
+          }}
+        />
       </div>
 
       {/* ── 라운드 게이지(E3.30-1 → E3.31-1): 항상 자리 유지 — 로드 전엔 빈 상태(레이아웃 점프 방지) ── */}
@@ -1194,7 +1202,7 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
     <div style={{ display: "flex", alignItems: "center" }}>
       {/* 좌: 티켓 아이콘(캡슐에 절반 겹침) */}
       {iconBroken ? (
-        <span style={{ fontSize: 22, zIndex: 1, marginRight: -10, filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.5))" }}>
+        <span style={{ fontSize: 26, zIndex: 1, marginRight: -12, filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.5))" }}>
           🎟
         </span>
       ) : (
@@ -1206,10 +1214,11 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
           draggable={false}
           onError={() => setIconBroken(true)}
           style={{
-            height: 26,
+            // E3.32-2: 확대 + 겹침 오프셋을 크기에 비례(-0.54)로 유지
+            height: "clamp(30px, 4.6vh, 40px)",
             width: "auto",
             zIndex: 1,
-            marginRight: -14,
+            marginRight: "calc(clamp(30px, 4.6vh, 40px) * -0.54)",
             filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.5))",
           }}
         />
@@ -1221,13 +1230,13 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
           border: "1px solid rgba(255,255,255,0.18)",
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -2px 4px rgba(0,0,0,0.4)",
           color: "#ffd23f",
-          fontSize: 14,
+          fontSize: "clamp(16px, 2.4vh, 20px)",
           fontWeight: 800,
-          padding: "4px 20px 4px 22px",
+          padding: "5px 24px 5px 26px",
           borderRadius: 999,
           textShadow: "0 1px 2px rgba(0,0,0,0.4)",
           whiteSpace: "nowrap",
-          minWidth: 64,
+          minWidth: 76,
           textAlign: "center",
         }}
       >
@@ -1237,11 +1246,18 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
       <button
         onClick={onCharge}
         aria-label="티켓 충전"
+        className="hud-btn"
         style={{
           border: "none",
           background: "transparent",
           padding: 0,
-          marginLeft: -13,
+          // E3.32-1: 44px 히트영역(투명) + 겹침 오프셋 비례 유지(-0.48, 히트박스 여유분 보정)
+          minWidth: 44,
+          minHeight: 44,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginLeft: "calc(clamp(32px, 4.8vh, 42px) * -0.48 - 4px)",
           zIndex: 1,
           cursor: "pointer",
           lineHeight: 0,
@@ -1253,8 +1269,8 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              width: 26,
-              height: 26,
+              width: "clamp(32px, 4.8vh, 42px)",
+              height: "clamp(32px, 4.8vh, 42px)",
               borderRadius: "50%",
               background: "linear-gradient(180deg, #58d685 0%, #2fae5c 100%)",
               border: "1.5px solid rgba(255,255,255,0.45)",
@@ -1275,7 +1291,7 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
             aria-hidden
             draggable={false}
             onError={() => setPlusBroken(true)}
-            style={{ height: 27, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.45))" }}
+            style={{ height: "clamp(32px, 4.8vh, 42px)", width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.45))" }}
           />
         )}
       </button>
@@ -1290,10 +1306,16 @@ function ExitButton() {
     <button
       onClick={() => requestNativeAction("exitGame")}
       aria-label="나가기"
+      className="hud-btn"
       style={{
         border: "none",
         background: "transparent",
         padding: 0,
+        minWidth: 44,
+        minHeight: 44,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
         cursor: "pointer",
         lineHeight: 0,
       }}
@@ -1323,7 +1345,7 @@ function ExitButton() {
           aria-hidden
           draggable={false}
           onError={() => setBroken(true)}
-          style={{ height: 34, width: "auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.45))" }}
+          style={{ height: "clamp(38px, 5.4vh, 48px)", width: "auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.45))" }}
         />
       )}
     </button>
@@ -1337,7 +1359,19 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
     <button
       onClick={onClick}
       aria-label="환경설정"
-      style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}
+      className="hud-btn"
+      style={{
+        border: "none",
+        background: "transparent",
+        padding: 0,
+        minWidth: 44,
+        minHeight: 44,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        lineHeight: 0,
+      }}
     >
       {broken ? (
         <span
@@ -1345,8 +1379,8 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            width: 34,
-            height: 34,
+            width: "clamp(38px, 5.4vh, 48px)",
+            height: "clamp(38px, 5.4vh, 48px)",
             borderRadius: "50%",
             background: "rgba(0,0,0,0.4)",
             border: "1px solid rgba(255,255,255,0.25)",
@@ -1364,7 +1398,7 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
           aria-hidden
           draggable={false}
           onError={() => setBroken(true)}
-          style={{ height: 34, width: "auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.45))" }}
+          style={{ height: "clamp(38px, 5.4vh, 48px)", width: "auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.45))" }}
         />
       )}
     </button>
