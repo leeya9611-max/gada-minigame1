@@ -1497,7 +1497,8 @@ export class GameEngine {
 
   // 박소장: 플레이어 뒤 gap 거리. 좌측 가장자리 안쪽으로 클램프해 항상 보이게.
   // 김반장과 동일한 목표 화면 키(TARGET_CHAR_H)로 그린다. gap 작을수록 위기 연출.
-  // E3.33: 효과 지속시간 게이지 — 좌상단 HP 행 아래, 세로 스택. 남은 1.5s부터 경고색+깜빡임
+  // E3.33 → A안(2026-08-03): 효과 지속시간 게이지 — 캐릭터 발밑 부착(시선 이동 0).
+  // 지면 라인(floorY) 기준 고정이라 점프에도 안 흔들림. 남은 1.5s부터 경고색+깜빡임
   // (마지막 0.5s는 더 빠르게). hud로 흘리지 않고 draw에서 직접 계산(프레임 비용 최소).
   private drawEffectGauges(ctx: CanvasRenderingContext2D, now: number) {
     if (this.caughtAt || this.phase !== "playing") return;
@@ -1508,47 +1509,49 @@ export class GameEngine {
       items.push({ icon: "🧲", until: this.magnetUntil, total: ITEM_EFFECT.MAGNET_MS, color: "#5ec8ff" });
     if (!items.length) return;
 
-    // 좌상단 HP 패널(≈12~56) + 감속 배지 행 아래 — 배너(top 13%≈58, 중앙)·말풍선(y≥168)과 비겹침
-    let y = 92;
+    // 김반장 수평 중앙, 발밑(지면 라인 + 12) — 슬라이드 먼지(floorY-4 위쪽)·전경 펜스(VIEW.H-26)와 비겹침
+    const cx = PLAYER.X + PLAYER.W / 2 + this.player.visualOffsetX;
+    const barW = 84;
+    const barH = 9;
+    let y = this.player.floorY + 12;
     for (const it of items) {
       const remain = it.until - now;
       const frac = Math.max(0, Math.min(1, remain / it.total));
       const warning = remain <= 1500;
       const blinkPeriod = remain <= 500 ? 120 : 250;
       const blink = warning ? (Math.floor(now / blinkPeriod) % 2 === 0 ? 1 : 0.35) : 1;
-      const barX = 36;
-      const barW = 96;
-      const barH = 10;
+      const barX = cx - barW / 2;
 
       ctx.save();
-      // 아이콘
-      ctx.font = "14px sans-serif";
-      ctx.textAlign = "left";
+      // 아이콘(바 왼쪽)
+      ctx.font = "13px sans-serif";
+      ctx.textAlign = "right";
       ctx.textBaseline = "middle";
       ctx.globalAlpha = 0.95;
-      ctx.fillText(it.icon, 14, y + barH / 2 + 1);
+      ctx.fillText(it.icon, barX - 5, y + barH / 2 + 1);
       // 트랙
-      ctx.fillStyle = "rgba(0,0,0,0.45)";
-      roundRectPath(ctx, barX, y, barW, barH, 5);
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      roundRectPath(ctx, barX, y, barW, barH, 4.5);
       ctx.fill();
       // 채움(경고 시 색 전환 + 깜빡임)
       ctx.globalAlpha = 0.95 * blink;
       ctx.fillStyle = warning ? "#ff5a3c" : it.color;
       if (frac > 0) {
-        roundRectPath(ctx, barX, y, Math.max(barH, barW * frac), barH, 5);
+        roundRectPath(ctx, barX, y, Math.max(barH, barW * frac), barH, 4.5);
         ctx.fill();
       }
-      // 남은 초(보조)
+      // 남은 초(보조, 바 오른쪽)
       ctx.globalAlpha = 0.95;
       ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "left";
       ctx.fillStyle = warning ? "#ffb3a0" : "#fff";
       ctx.strokeStyle = "rgba(31,42,68,0.8)";
       ctx.lineWidth = 2.5;
       const label = (remain / 1000).toFixed(1);
-      ctx.strokeText(label, barX + barW + 7, y + barH / 2 + 1);
-      ctx.fillText(label, barX + barW + 7, y + barH / 2 + 1);
+      ctx.strokeText(label, barX + barW + 6, y + barH / 2 + 1);
+      ctx.fillText(label, barX + barW + 6, y + barH / 2 + 1);
       ctx.restore();
-      y += 18;
+      y += 15;
     }
   }
 
