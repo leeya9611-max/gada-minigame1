@@ -692,6 +692,13 @@ export default function Game({ token }: { token?: string }) {
       {showAttendance && attendance && (
         <AttendancePanel state={attendance} onClaim={claimAttendance} onClose={() => setShowAttendance(false)} />
       )}
+      {/* E3.32-4: 눌림 피드백(전역) — 스케일 + 그림자 축소(자식 선택자라 dangerouslySetInnerHTML) */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html:
+            ".hud-btn{ transition: transform 0.08s ease } .hud-btn:active{ transform: scale(0.94) } .hud-btn:active img{ filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)) !important }",
+        }}
+      />
       {isPortrait && <RotateHint />}
       {/* E7-3: 브리지 디버그 오버레이 — ?debug=1 웹뷰 QA 전용, 게임 화면 불변 */}
       {debugMode && <BridgeDebug />}
@@ -1107,13 +1114,7 @@ function LobbyScreen({
           <SettingsButton onClick={onOpenSettings} />
           <ExitButton />
         </div>
-        {/* E3.32-4: 눌림 피드백 — 스케일 + 그림자 축소(자식 선택자라 dangerouslySetInnerHTML, E4-13 교훈) */}
-        <style
-          dangerouslySetInnerHTML={{
-            __html:
-              ".hud-btn{ transition: transform 0.08s ease } .hud-btn:active{ transform: scale(0.94) } .hud-btn:active img{ filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)) !important }",
-          }}
-        />
+
       </div>
 
       {/* ── 라운드 게이지(E3.30-1 → E3.31-1): 항상 자리 유지 — 로드 전엔 빈 상태(레이아웃 점프 방지) ── */}
@@ -1556,30 +1557,39 @@ function AttendancePanel({
             <div
               key={day}
               style={{
-                ...resultCard,
-                maxWidth: "none",
-                padding: "clamp(4px, 1.2vh, 8px) 2px",
-                height: "clamp(64px, 17vh, 96px)",
+                flex: 1,
+                minWidth: 0,
+                borderRadius: 14,
+                // 반투명 → 불투명 카드(오버레이 위에서 또렷하게)
+                background: received
+                  ? "linear-gradient(180deg, #2a3450 0%, #222b42 100%)"
+                  : "linear-gradient(180deg, #3b4a70 0%, #2c3855 100%)",
+                padding: "clamp(5px, 1.4vh, 9px) 2px",
+                height: "clamp(72px, 19vh, 108px)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: 2,
-                opacity: received ? 0.45 : 1,
-                border: today ? "2px solid #ffd23f" : "2px solid transparent",
+                gap: 3,
+                opacity: received ? 0.55 : 1,
+                border: today ? "2.5px solid #ffd23f" : "1px solid rgba(255,255,255,0.16)",
                 transform: today ? "scale(1.07)" : "none",
                 boxShadow: today
-                  ? "0 0 12px rgba(255,210,63,0.4), inset 0 1px 0 rgba(255,255,255,0.14)"
-                  : undefined,
+                  ? "0 0 14px rgba(255,210,63,0.45), inset 0 1px 0 rgba(255,255,255,0.18)"
+                  : "inset 0 1px 0 rgba(255,255,255,0.1), 0 2px 6px rgba(0,0,0,0.3)",
               }}
             >
-              <div style={{ fontSize: 10, fontWeight: 800, color: today ? "#ffd23f" : "#8fa3c4" }}>{day}일</div>
+              <div style={{ fontSize: "clamp(12px, 2.2vh, 15px)", fontWeight: 800, color: today ? "#ffd23f" : "#aebfda" }}>
+                {day}일
+              </div>
               {received ? (
-                <div style={{ fontSize: "clamp(16px, 4vh, 22px)" }}>✅</div>
+                <div style={{ fontSize: "clamp(20px, 5vh, 28px)" }}>✅</div>
               ) : (
-                <BtnIcon src="/assets/ui/ticket_icon.png" fallback="🎟" size={26} />
+                <BtnIcon src="/assets/ui/ticket_icon.png" fallback="🎟" size={38} />
               )}
-              <div style={{ fontSize: 11, fontWeight: 800, color: reward > 1 ? "#ffd23f" : "#cdd8ec" }}>×{reward}</div>
+              <div style={{ fontSize: "clamp(12px, 2.2vh, 15px)", fontWeight: 800, color: reward > 1 ? "#ffd23f" : "#e6ecf7" }}>
+                ×{reward}
+              </div>
             </div>
           );
         })}
@@ -1588,6 +1598,7 @@ function AttendancePanel({
         <button
           onClick={onClaim}
           disabled={claimedToday}
+          className="hud-btn"
           style={{ ...primaryBtn, marginBottom: 0, minWidth: 200, opacity: claimedToday ? 0.55 : 1, cursor: claimedToday ? "default" : "pointer" }}
         >
           {claimedToday ? "내일 또 오세요" : `${rewards[dayIndex - 1]}장 받기`}
