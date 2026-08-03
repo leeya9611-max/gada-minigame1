@@ -1194,55 +1194,54 @@ function LobbyScreen({
   );
 }
 
-// E3.28-4: 티켓 재화 바 — [티켓 아이콘][진한 캡슐 숫자][+ 버튼]. 아이콘·버튼은 이미지 폴백.
+// E3.28-4 → E3.32-R: 티켓 재화 바 — [캡슐(아이콘+숫자)] + 우측 끝에 겹치는 원형 + 버튼(레퍼런스 스타일).
+// 아이콘·버튼 이미지 폴백(🎟/초록 CSS 원) 유지, 44px 히트영역·hud-btn 눌림 피드백 유지.
 function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => void }) {
   const [iconBroken, setIconBroken] = useState(false);
   const [plusBroken, setPlusBroken] = useState(false);
   return (
     <div style={{ display: "flex", alignItems: "center" }}>
-      {/* 좌: 티켓 아이콘(캡슐에 절반 겹침) */}
-      {iconBroken ? (
-        <span style={{ fontSize: 26, zIndex: 1, marginRight: -12, filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.5))" }}>
-          🎟
-        </span>
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src="/assets/ui/ticket_icon.png"
-          alt=""
-          aria-hidden
-          draggable={false}
-          onError={() => setIconBroken(true)}
-          style={{
-            // E3.32-2: 확대 + 겹침 오프셋을 크기에 비례(-0.54)로 유지
-            height: "clamp(30px, 4.6vh, 40px)",
-            width: "auto",
-            zIndex: 1,
-            marginRight: "calc(clamp(30px, 4.6vh, 40px) * -0.54)",
-            filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.5))",
-          }}
-        />
-      )}
-      {/* 중: 진한 캡슐 바 + 숫자 */}
+      {/* 캡슐: 아이콘(안쪽 좌) + 숫자(우) — 우측 패딩은 + 버튼 겹침 공간 */}
       <span
         style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
           background: "rgba(0,0,0,0.55)",
           border: "1px solid rgba(255,255,255,0.18)",
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -2px 4px rgba(0,0,0,0.4)",
-          color: "#ffd23f",
-          fontSize: "clamp(16px, 2.4vh, 20px)",
-          fontWeight: 800,
-          padding: "5px 24px 5px 26px",
           borderRadius: 999,
-          textShadow: "0 1px 2px rgba(0,0,0,0.4)",
-          whiteSpace: "nowrap",
-          minWidth: 76,
-          textAlign: "center",
+          padding: "4px 30px 4px 10px",
         }}
       >
-        {tickets}
+        {iconBroken ? (
+          <span style={{ fontSize: "clamp(20px, 3.2vh, 26px)", lineHeight: 1 }}>🎟</span>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src="/assets/ui/ticket_icon.png"
+            alt=""
+            aria-hidden
+            draggable={false}
+            onError={() => setIconBroken(true)}
+            style={{ height: "clamp(24px, 3.8vh, 32px)", width: "auto" }}
+          />
+        )}
+        <span
+          style={{
+            color: "#ffd23f",
+            fontSize: "clamp(16px, 2.4vh, 20px)",
+            fontWeight: 800,
+            textShadow: "0 1px 2px rgba(0,0,0,0.4)",
+            fontVariantNumeric: "tabular-nums",
+            minWidth: 24,
+            textAlign: "right",
+          }}
+        >
+          {tickets}
+        </span>
       </span>
-      {/* 우: 원형 + 버튼 → 광고 시청 요청(랭킹 페이지와 동일 동작) */}
+      {/* 원형 + 버튼: 캡슐 우측 끝에 절반 겹침 → 광고 시청 요청(랭킹 페이지와 동일 동작) */}
       <button
         onClick={onCharge}
         aria-label="티켓 충전"
@@ -1251,13 +1250,12 @@ function TicketBar({ tickets, onCharge }: { tickets: number; onCharge: () => voi
           border: "none",
           background: "transparent",
           padding: 0,
-          // E3.32-1: 44px 히트영역(투명) + 겹침 오프셋 비례 유지(-0.48, 히트박스 여유분 보정)
           minWidth: 44,
           minHeight: 44,
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          marginLeft: "calc(clamp(32px, 4.8vh, 42px) * -0.48 - 4px)",
+          marginLeft: "calc(clamp(32px, 4.8vh, 42px) * -0.55 - 4px)",
           zIndex: 1,
           cursor: "pointer",
           lineHeight: 0,
