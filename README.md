@@ -35,6 +35,17 @@ pnpm dev
    );
    alter table attendance enable row level security;
    grant all on table attendance to service_role;
+
+   -- 게임 세션(E8-보안): 점수 위조 방어 — 서버가 시작 시각 기록·1회용 소비. 만료 청소는 운영 크론(선택)
+   create table if not exists game_sessions (
+     session_id  text primary key,
+     user_id     text not null references users(user_id) on delete cascade,
+     started_at  timestamptz not null default now(),
+     consumed_at timestamptz
+   );
+   create index if not exists idx_game_sessions_user on game_sessions (user_id);
+   alter table game_sessions enable row level security;
+   grant all on table game_sessions to service_role;
    ```
 4. supabase-js가 Node 20 지원 중단 예고 — Vercel 프로젝트 설정에서 Node.js 22.x 권장.
 

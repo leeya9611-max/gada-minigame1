@@ -141,12 +141,28 @@ export async function postSeasonScore(result: NativeGameResult): Promise<void> {
         nickname: result.nickname,
         score: result.rankScore,
         mode: result.mode,
-        playDuration: result.playDuration, // E6-4: 서버 점수 상한 검증용
+        sessionId: result.sessionId, // E8-보안: 서버 발급 세션 — 서버가 경과시간 측정·검증
       }),
       keepalive: true,
     });
   } catch {
     /* 랭킹 반영 실패는 게임 흐름에 영향 없음 */
+  }
+}
+
+// E8-보안: 무한 잔업 시작 시 서버 세션 발급(서버가 시작 시각 기록). 실패 시 null → 점수 미제출.
+export async function startGameSession(userId: string): Promise<string | null> {
+  try {
+    const res = await fetch("/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    if (!res.ok) return null;
+    const d = (await res.json()) as { ok?: boolean; sessionId?: string };
+    return d.ok && d.sessionId ? d.sessionId : null;
+  } catch {
+    return null;
   }
 }
 

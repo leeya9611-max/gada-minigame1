@@ -141,6 +141,10 @@ export const SEASON = {
   // → 이론 116/s, 마진 포함 130/s. SPEED·SPAWN.COIN·COIN_VALUE 밸런스 변경 시 재계산할 것.
   MAX_SCORE_PER_SEC: 130,
   SCORE_CAP_BUFFER: 200, // 시작 직후 커피 대체 코인 등 고정 오차 허용
+  // E8-보안: 점수 제출 검증 — playDuration을 클라이언트에서 받지 않고 서버가 세션으로 측정한다.
+  MIN_PLAY_SEC: 3, // 세션 발급 후 이 시간 미만 제출은 무플레이(봇)로 간주해 거부
+  MAX_PLAY_SEC: 900, // 경과시간 상한(클램프) — 세션을 오래 열어두고 점수 뻥튀기 방지(15분)
+  // 절대 점수 상한 = MAX_PLAY_SEC × MAX_SCORE_PER_SEC + BUFFER ≈ 117,200. 90만 같은 값 원천 차단
 } as const;
 
 // E3.34: 출석 보상 — 7일 주기, 7일차는 3장(리텐션 스파이크). 지급 권위는 네이티브(웹은 요청+표시).

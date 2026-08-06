@@ -8,7 +8,7 @@ import { CHASE, REWARD_SAFE_MODE, ROUTES, SCORE, VIEW } from "./engine/config";
 import { EDU_ROUTE_ID, loadLevel, type LevelData, type RouteId } from "./engine/level";
 import type { GameMode, GameResult, HudState } from "./engine/types";
 import { parseToken } from "@/lib/auth";
-import { daysLeft, fetchSeason, loadCachedSeason, postSeasonScore, requestNativeAction, saveCachedSeason, sendResultToNative } from "@/lib/api";
+import { daysLeft, fetchSeason, loadCachedSeason, postSeasonScore, requestNativeAction, saveCachedSeason, sendResultToNative, startGameSession } from "@/lib/api";
 import type { NativeAction, SeasonBoard } from "@/lib/api";
 import { loadTickets, newSessionId, saveTickets } from "@/lib/tickets";
 import { logEvent } from "@/lib/analytics";
@@ -133,7 +133,7 @@ export default function Game({ token }: { token?: string }) {
     const left = tickets - 1;
     setTickets(left);
     saveTickets(left);
-    sessionRef.current = newSessionId();
+    sessionRef.current = newSessionId(); // 네이티브 전달용 클라 식별자(랭킹 제출은 서버 세션으로 덮어씀)
     logEvent("ticket_spend", { left }); // E6-3
     return true;
   }, [tickets]);
@@ -342,6 +342,10 @@ export default function Game({ token }: { token?: string }) {
     if (!eng || !spritesLoaded || showCharge || !eduDone) return;
     if (!consumeTicket()) return;
     playSfx("button_click");
+    // E8-보안: 서버 세션 발급 — 랭킹 제출 시 이 ID로 서버가 플레이 시간을 측정. 플레이 중 완료됨.
+    void startGameSession(user.userId).then((sid) => {
+      if (sid) sessionRef.current = sid;
+    });
     // E5: 주차(라운드)별 배경 팔레트 — 시즌 미로드 시 원본(2주차 석양)
     eng.setEndless("map1", season?.round);
     logEvent("play_start", { mode: "endless" }); // E6-3
@@ -383,10 +387,16 @@ export default function Game({ token }: { token?: string }) {
     // 안전교육은 무료 재연습, 본선·노선은 티켓 1장
     if (currentModeRef.current !== "edu" && !consumeTicket()) return;
     playSfx("button_click");
+    // E8-보안: 엔들리스 재도전도 새 세션(직전 세션은 이미 소비됨)
+    if (currentModeRef.current === "endless") {
+      void startGameSession(user.userId).then((sid) => {
+        if (sid) sessionRef.current = sid;
+      });
+    }
     logEvent("play_start", { mode: currentModeRef.current, restart: true }); // E6-3
     setResult(null);
     engineRef.current?.restart();
-  }, [consumeTicket]);
+  }, [consumeTicket, user.userId]);
 
   const goLobby = useCallback(() => {
     playSfx("button_click");

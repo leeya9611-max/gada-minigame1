@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SEASON } from "@/app/game/engine/config";
 import { getDb } from "@/lib/db";
+import { sessionStore } from "@/lib/session-store";
 
 // 주간 시즌 랭킹 API — E7-1: Supabase(daily_scores + season_board/season_me RPC) 저장.
 // 환경변수 미설정 시 기존 메모리 스텁으로 폴백(로컬 개발·헤드리스 검증).
@@ -8,12 +9,14 @@ import { getDb } from "@/lib/db";
 // 랭킹 구조(기획 3장): 하루 점수 = 일일 베스트, 주간 점수 = 라운드(월~일, KST) 내 일일 베스트 합,
 // 이벤트 시작일(SEASON.EVENT_START, KST 월요일) 기준 매주 월요일 리셋, 총 4라운드.
 //
-// POST { userId, nickname, score, mode, playDuration, date? }
-//   - mode가 "endless"일 때만 반영(edu·route 점수는 랭킹 제외)
-//   - E6-4: playDuration(초) 필수 — score ≤ playDuration × MAX_SCORE_PER_SEC + BUFFER 검증(어뷰징 상한)
-//   - date(YYYY-MM-DD, KST) 생략 시 서버가 오늘(KST)로 기록
-//   → 200 { ok: true, todayBest }          해당 날짜 베스트 갱신(기존보다 낮으면 유지)
-//   → 200 { ok: false, reason: "mode" | "invalid" | "score_cap" }
+// E8-보안: 점수 위조 방어. playDuration을 클라이언트에서 받지 않는다 —
+// /api/session에서 발급한 sessionId로 서버가 (제출 시각 - 시작 시각)을 직접 측정한다.
+// POST { userId, nickname, score, mode, sessionId }
+//   - sessionId 필수: 없거나·모르거나·이미 사용됨·다른 userId면 거부(무플레이·재사용·위장 차단)
+//   - 서버 측정 elapsed로 상한 검증: score ≤ min(elapsed, MAX_PLAY_SEC) × MAX_SCORE_PER_SEC + BUFFER
+//   - elapsed < MIN_PLAY_SEC(즉시 제출)도 거부
+//   → 200 { ok: true, todayBest }
+//   → 200 { ok: false, reason: "mode" | "invalid" | "session" | "score_cap" }
 // GET ?userId=...
 //   → 200 {
 //        round,                    현재 라운드(1..ROUNDS, 시작 전엔 1)
@@ -55,14 +58,41 @@ function weekScoreOf(rec: UserRecord, from: string, to: string): number {
   return sum;
 }
 
+// E8-보안: 세션을 소비하고 서버 측정 경과시간(초)을 반환. 실패 시 null.
+// 재사용(consumed)·미존재·userId 불일치는 전부 거부. 성공 시 1회용으로 소비 처리.
+async function consumeSession(sessionId: string | undefined, userId: string): Promise<number | null> {
+  const sid = sessionId?.trim();
+  if (!sid) return null;
+  const db = getDb();
+  if (db) {
+    const { data } = await db
+      .from("game_sessions")
+      .select("user_id, started_at, consumed_at")
+      .eq("session_id", sid)
+      .maybeSingle();
+    if (!data || data.user_id !== userId || data.consumed_at) return null;
+    const { error } = await db
+      .from("game_sessions")
+      .update({ consumed_at: new Date().toISOString() })
+      .eq("session_id", sid)
+      .is("consumed_at", null); // 조건부: 동시 요청 경합 시 한쪽만 성공
+    if (error) return null;
+    return (Date.now() - Date.parse(data.started_at as string)) / 1000;
+  }
+  // 메모리 폴백
+  const rec = sessionStore.get(sid);
+  if (!rec || rec.userId !== userId || rec.consumed) return null;
+  rec.consumed = true;
+  return (Date.now() - rec.startedAt) / 1000;
+}
+
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as {
     userId?: string;
     nickname?: string;
     score?: number;
     mode?: string;
-    playDuration?: number;
-    date?: string;
+    sessionId?: string;
   } | null;
   const userId = body?.userId?.trim();
   const score = Math.floor(Number(body?.score));
@@ -73,16 +103,22 @@ export async function POST(req: NextRequest) {
     // edu 등 비랭킹 모드 점수는 랭킹 제외(기획 3장)
     return NextResponse.json({ ok: false, reason: "mode" });
   }
-  // E6-4: playDuration 대비 점수 상한 — 조작된 고점수 차단
-  const dur = Number(body?.playDuration);
-  if (!Number.isFinite(dur) || dur <= 0 || dur > 7200) {
-    return NextResponse.json({ ok: false, reason: "invalid" });
+
+  // E8-보안: 세션 소비 → 서버 측정 경과시간(초). 세션 검증 실패 시 점수 거부.
+  const elapsed = await consumeSession(body?.sessionId, userId);
+  if (elapsed === null) {
+    console.warn("[SEASON] 세션 거부:", { userId, sessionId: body?.sessionId });
+    return NextResponse.json({ ok: false, reason: "session" });
   }
-  if (score > dur * SEASON.MAX_SCORE_PER_SEC + SEASON.SCORE_CAP_BUFFER) {
-    console.warn("[SEASON] score_cap 차단:", { userId, score, dur });
+  if (elapsed < SEASON.MIN_PLAY_SEC) {
+    return NextResponse.json({ ok: false, reason: "session" }); // 즉시 제출(봇)
+  }
+  const cappedSec = Math.min(elapsed, SEASON.MAX_PLAY_SEC);
+  if (score > cappedSec * SEASON.MAX_SCORE_PER_SEC + SEASON.SCORE_CAP_BUFFER) {
+    console.warn("[SEASON] score_cap 차단:", { userId, score, elapsed });
     return NextResponse.json({ ok: false, reason: "score_cap" });
   }
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(body?.date ?? "") ? body!.date! : kstDate();
+  const date = kstDate();
 
   const db = getDb();
   if (db) {
