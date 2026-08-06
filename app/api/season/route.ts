@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SEASON } from "@/app/game/engine/config";
 import { getDb } from "@/lib/db";
-import { sessionStore } from "@/lib/session-store";
+import { sessionStore, SESSION_TTL_MS } from "@/lib/session-store";
+import { sanitizeUserId } from "@/lib/validate";
 
 // 주간 시즌 랭킹 API — E7-1: Supabase(daily_scores + season_board/season_me RPC) 저장.
 // 환경변수 미설정 시 기존 메모리 스텁으로 폴백(로컬 개발·헤드리스 검증).
@@ -71,6 +72,7 @@ async function consumeSession(sessionId: string | undefined, userId: string): Pr
       .eq("session_id", sid)
       .maybeSingle();
     if (!data || data.user_id !== userId || data.consumed_at) return null;
+    if (Date.now() - Date.parse(data.started_at as string) > SESSION_TTL_MS) return null; // 만료 세션
     const { error } = await db
       .from("game_sessions")
       .update({ consumed_at: new Date().toISOString() })
@@ -82,6 +84,7 @@ async function consumeSession(sessionId: string | undefined, userId: string): Pr
   // 메모리 폴백
   const rec = sessionStore.get(sid);
   if (!rec || rec.userId !== userId || rec.consumed) return null;
+  if (Date.now() - rec.startedAt > SESSION_TTL_MS) return null; // 만료 세션
   rec.consumed = true;
   return (Date.now() - rec.startedAt) / 1000;
 }
@@ -94,7 +97,7 @@ export async function POST(req: NextRequest) {
     mode?: string;
     sessionId?: string;
   } | null;
-  const userId = body?.userId?.trim();
+  const userId = sanitizeUserId(body?.userId);
   const score = Math.floor(Number(body?.score));
   if (!userId || !Number.isFinite(score) || score < 0) {
     return NextResponse.json({ ok: false, reason: "invalid" });
@@ -160,7 +163,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get("userId")?.trim() ?? "";
+  const userId = sanitizeUserId(req.nextUrl.searchParams.get("userId")) ?? "";
   const { round, from, to, endsAt } = currentRound();
 
   const db = getDb();

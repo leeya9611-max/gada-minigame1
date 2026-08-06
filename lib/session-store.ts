@@ -7,3 +7,6 @@ export interface SessionRec {
 }
 const g = globalThis as unknown as { __gameSessions?: Map<string, SessionRec> };
 export const sessionStore: Map<string, SessionRec> = (g.__gameSessions ??= new Map());
+
+// E8-보안2: 세션 유효기간 — 발급 후 이 시간 지나면 점수 제출 불가·정리 대상(한 판은 그 안에 끝남)
+export const SESSION_TTL_MS = 30 * 60_000;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateNickname } from "@/lib/nickname";
 import { getDb } from "@/lib/db";
+import { sanitizeUserId } from "@/lib/validate";
 
 // 닉네임 등록·중복 확인 API — E7-1: Supabase(users 테이블) 저장.
 // 환경변수 미설정 시 기존 메모리 스텁으로 폴백(로컬 개발·헤드리스 검증).
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as
     | { userId?: string; name?: string }
     | null;
-  const userId = body?.userId?.trim();
+  const userId = sanitizeUserId(body?.userId);
   const raw = body?.name ?? "";
   if (!userId) return NextResponse.json({ ok: false, reason: "invalid" });
 
@@ -118,7 +119,7 @@ async function suggestDb(
 }
 
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get("userId")?.trim();
+  const userId = sanitizeUserId(req.nextUrl.searchParams.get("userId"));
   if (!userId) return NextResponse.json({ name: null });
 
   const db = getDb();

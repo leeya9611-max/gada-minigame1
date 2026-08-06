@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { sanitizeUserId } from "@/lib/validate";
 
 // 안전교육 이수 API — E7-1: 서버 이관(users.edu_done). 기기 변경에도 이수 유지.
 // 환경변수 미설정 시 메모리 스텁 폴백(로컬 개발·헤드리스 검증).
@@ -11,7 +12,7 @@ const g = globalThis as unknown as { __eduStore?: Set<string> };
 const store: Set<string> = (g.__eduStore ??= new Set());
 
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get("userId")?.trim();
+  const userId = sanitizeUserId(req.nextUrl.searchParams.get("userId"));
   if (!userId) return NextResponse.json({ eduDone: false });
 
   const db = getDb();
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as { userId?: string } | null;
-  const userId = body?.userId?.trim();
+  const userId = sanitizeUserId(body?.userId);
   if (!userId) return NextResponse.json({ ok: false });
 
   const db = getDb();

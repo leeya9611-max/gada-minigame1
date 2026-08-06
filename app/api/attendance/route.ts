@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ATTENDANCE } from "@/app/game/engine/config";
 import { getDb } from "@/lib/db";
+import { sanitizeUserId } from "@/lib/validate";
 
 // E3.34: 출석 보상 API — Supabase(attendance 테이블, README 배포 섹션 SQL 참조).
 // 환경변수 미설정 시 메모리 스텁 폴백(로컬 개발·헤드리스 검증).
@@ -30,7 +31,7 @@ function nextDayIndex(claimCount: number): number {
 }
 
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get("userId")?.trim();
+  const userId = sanitizeUserId(req.nextUrl.searchParams.get("userId"));
   const rewards = [...ATTENDANCE.REWARDS];
   if (!userId) return NextResponse.json({ dayIndex: 1, claimedToday: false, rewards });
 
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as { userId?: string } | null;
-  const userId = body?.userId?.trim();
+  const userId = sanitizeUserId(body?.userId);
   if (!userId) return NextResponse.json({ ok: false, reason: "invalid" });
   const today = kstDate();
 
